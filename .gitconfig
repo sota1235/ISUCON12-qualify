@@ -1,6 +1,8 @@
 [user]
 	name = isu1
 	email = isu1@example.com
+[core]
+	editor = vim
 [alias]
 	l = log
 	st = status
