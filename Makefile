@@ -4,9 +4,9 @@ KATARIBE_COMMAND="kataribe -conf $(HOME)/tools/kataribe/kataribe.toml"
 GIT_BRANCH=main
 # 競技に合わせて書き換える
 HOME=/home/isucon
-SSH_NAME=isucon11
-WEB_APP_DIR="webapp/nodejs" # server上のhomeディレクトリから辿ったアプリのディレクトリ
-SERVICE_NAME="isucondition.nodejs.service" # systemctlで管理されているサービス名を設定
+SSH_NAME=isu1
+WEB_APP_DIR="webapp/node" # server上のhomeディレクトリから辿ったアプリのディレクトリ
+SERVICE_NAME="isuports.service" # systemctlで管理されているサービス名を設定
 # MySQL
 MYSQL_SLOW_QUERY_LOG=/var/log/mysql/mariadb-slow.log
 MYSQL_USER=isucon
@@ -28,6 +28,7 @@ install_notify_slack: ## notify_slackのinstall
 
 .PHONY: install_kataribe
 install_kataribe: ## kataribeのinstall
+	ssh $(SSH_NAME) "sudo apt-get install zip"
 	ssh $(SSH_NAME) "mkdir -p /tmp/kataribe"
 	ssh $(SSH_NAME) "cd /tmp/kataribe && wget https://github.com/matsuu/kataribe/releases/download/v0.4.3/kataribe-v0.4.3_linux_amd64.zip"
 	ssh $(SSH_NAME) "cd /tmp/kataribe && unzip kataribe-v0.4.3_linux_amd64.zip"
