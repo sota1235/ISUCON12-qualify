@@ -79,7 +79,7 @@ setup-git: ## Gitの設定
 .PHONY: deploy
 deploy: deploy_db_settings ## Deploy all
 	## WebApp Deployment
-	ssh $(SSH_NAME) "cd $(HOME) && git pull"
+	ssh $(SSH_NAME) "cd $(HOME) && git pull && git merge origin/main"
 	ssh $(SSH_NAME) "cd $(HOME) && git checkout $(GIT_BRANCH)"
 	ssh $(SSH_NAME) "cd $(HOME) && make deploy_remote"
 	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && $(NPM) i"
