@@ -13,6 +13,10 @@ MYSQL_USER=isucon
 MYSQL_PASS=isucon
 MYSQL_DB=isucondition
 
+.PHONY: test
+test:
+	echo 'test' | notify_slack -c tools/notify_slack/notify_slack.toml
+
 # Initial setup
 .PHONY: install_notify_slack
 install_notify_slack: ## notify_slackのinstall
@@ -86,6 +90,7 @@ deploy_db_settings: ## Deploy /etc configs
 # Util
 .PHONY: health_check
 health_check: ## 各サービスの状態をチェック
+	ssh $(SSH_NAME) "sudo /opt/isucon-env-checker/isucon-env-checker" # メンテナンスコマンド
 	ssh $(SSH_NAME) "sudo systemctl status $(SERVICE_NAME)"
 	ssh $(SSH_NAME) "sudo systemctl status nginx"
 	ssh $(SSH_NAME) "sudo systemctl status mysql"
