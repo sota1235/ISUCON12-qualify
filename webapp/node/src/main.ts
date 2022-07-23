@@ -1519,10 +1519,10 @@ app.get(
 async function moveToMysqlFromSqlite() {
   for (let i = 1; i <= 100; i++) {
     const tenantDB = await connectToTenantDB(i)
+
     const competitions = await tenantDB.all<CompetitionRow[]>(
         'SELECT * FROM competition'
     )
-
     const promises = []
     for (const c of competitions) {
       promises.push(adminDB.query(
@@ -1530,6 +1530,27 @@ async function moveToMysqlFromSqlite() {
           [c['id'], c['tenant_id'], c['title'], c['finished_at'], c['created_at'], c['updated_at']],
       ))
     }
+
+    const players = await tenantDB.all<PlayerRow[]>(
+        'SELECT * FROM player'
+    )
+    for (const p of players) {
+      promises.push(adminDB.query(
+          'INSERT INTO player (id, tenant_id, display_name, is_disqualified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+          [p['id'], p['tenant_id'], p['display_name'], p['is_disqualified'], p['created_at'], p['updated_at']],
+      ))
+    }
+
+    const playerScores = await tenantDB.all<PlayerScoreRow[]>(
+        'SELECT * FROM player_score'
+    )
+    for (const ps of playerScores) {
+      promises.push(adminDB.query(
+          'INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [ps['id'], ps['tenant_id'], ps['player_id'], ps['competition_id'], ps['score'], ps['row_num'], ps['created_at'], ps['updated_at']],
+      ))
+    }
+
     await Promise.all(promises)
   }
 }

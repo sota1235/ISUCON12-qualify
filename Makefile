@@ -141,3 +141,9 @@ help: ## Print this help
 	@echo ''
 	@echo 'Targets:'
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+.PHONY: dump
+dump:
+    mysqldump -uisucon -pisucon isuports competition > initial_data/0_competition.sql
+    mysqldump -uisucon -pisucon isuports player > initial_data/0_player.sql
+    mysqldump -uisucon -pisucon isuports player_score > initial_data/0_player_score.sql

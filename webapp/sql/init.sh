@@ -21,6 +21,23 @@ mysql -u"$ISUCON_DB_USER" \
 		--port "$ISUCON_DB_PORT" \
 		"$ISUCON_DB_NAME" < tenant/10_schema.sql
 
+# MySQL を dump から restore
+mysql -u"$ISUCON_DB_USER" \
+		-p"$ISUCON_DB_PASSWORD" \
+		--host "$ISUCON_DB_HOST" \
+		--port "$ISUCON_DB_PORT" \
+		"$ISUCON_DB_NAME" < ../../initial_data/0_competition.txt
+mysql -u"$ISUCON_DB_USER" \
+		-p"$ISUCON_DB_PASSWORD" \
+		--host "$ISUCON_DB_HOST" \
+		--port "$ISUCON_DB_PORT" \
+		"$ISUCON_DB_NAME" < ../../initial_data/0_player.txt
+mysql -u"$ISUCON_DB_USER" \
+		-p"$ISUCON_DB_PASSWORD" \
+		--host "$ISUCON_DB_HOST" \
+		--port "$ISUCON_DB_PORT" \
+		"$ISUCON_DB_NAME" < ../../initial_data/0_player_score.txt
+
 # SQLiteのデータベースを初期化
 rm -f ../tenant_db/*.db
 cp -r ../../initial_data/*.db ../tenant_db/
