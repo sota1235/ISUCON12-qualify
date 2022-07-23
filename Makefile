@@ -5,7 +5,8 @@ GIT_BRANCH=main
 # 競技に合わせて書き換える
 HOME=/home/isucon
 SSH_NAME=isu1
-WEB_APP_DIR=webapp/node # server上のhomeディレクトリから辿ったアプリのディレクトリ
+# server上のhomeディレクトリから辿ったアプリのディレクトリ
+WEB_APP_DIR=webapp/node
 SERVICE_NAME="isuports.service" # systemctlで管理されているサービス名を設定
 # MySQL
 MYSQL_SLOW_QUERY_LOG=/var/log/mysql/mariadb-slow.log
