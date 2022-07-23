@@ -21,7 +21,6 @@ const exec = util.promisify(childProcess.exec)
 const flock = util.promisify(fsExt.flock)
 
 // constants
-const tenantDBSchemaFilePath = '../sql/tenant/10_schema.sql'
 const initializeScript = '../sql/init.sh'
 const cookieName = 'isuports_session'
 
@@ -78,18 +77,6 @@ async function connectToTenantDB(id: number): Promise<Database> {
   }
 
   return db
-}
-
-// テナントDBを新規に作成する
-async function createTenantDB(id: number): Promise<Error | undefined> {
-  // todo: MySQL に変える
-  const p = tenantDBPath(id)
-
-  try {
-    await exec(`sh -c "sqlite3 ${p} < ${tenantDBSchemaFilePath}"`)
-  } catch (error: any) {
-    return new Error(`failed to exec "sqlite3 ${p} < ${tenantDBSchemaFilePath}", out=${error.stderr}`)
-  }
 }
 
 // システム全体で一意なIDを生成する
@@ -493,14 +480,6 @@ app.post(
         throw new Error(
           `error Insert tenant: name=${name}, displayName=${display_name}, createdAt=${now}, updatedAt=${now}, ${error}`
         )
-      }
-
-      // NOTE: 先にadminDBに書き込まれることでこのAPIの処理中に
-      //       /api/admin/tenants/billingにアクセスされるとエラーになりそう
-      //       ロックなどで対処したほうが良さそう
-      const error = await createTenantDB(id)
-      if (error) {
-        throw new Error(`error createTenantDB: id=${id} name=${name}, ${error}`)
       }
 
       const data: TenantsAddResult = {
