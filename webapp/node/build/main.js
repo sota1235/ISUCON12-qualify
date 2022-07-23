@@ -366,7 +366,13 @@ async function billingReportByCompetition(tenantDB, tenantId, competitionId) {
         throw Error('error retrieveCompetition on billingReportByCompetition');
     }
     // ランキングにアクセスした参加者のIDを取得する
-    const [vhs] = await adminDB.query('SELECT player_id, created_at AS min_created_at FROM first_visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id', [tenantId, comp.id]);
+    /**
+    const [vhs] = await adminDB.query<(VisitHistorySummaryRow & RowDataPacket)[]>(
+      'SELECT player_id, created_at AS min_created_at FROM first_visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id',
+      [tenantId, comp.id]
+    )
+     */
+    const [vhs] = await adminDB.query('SELECT player_id, MIN(created_at) AS min_created_at FROM visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id', [tenantId, comp.id]);
     const billingMap = {};
     for (const vh of vhs) {
         // competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
@@ -1032,7 +1038,13 @@ app.get('/api/player/competition/:competitionId/ranking', wrap(async (req, res) 
                 viewer.tenantId,
             ]);
             try {
-                await adminDB.execute('INSERT INTO first_visit_history (player_id, tenant_id, competition_id, created_at) VALUES (?, ?, ?, ?)', [viewer.playerId, tenant.id, competitionId, now]);
+                /**
+                await adminDB.execute<OkPacket>(
+                  'INSERT INTO first_visit_history (player_id, tenant_id, competition_id, created_at) VALUES (?, ?, ?, ?)',
+                  [viewer.playerId, tenant.id, competitionId, now]
+                )
+                 */
+                await adminDB.execute('INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)', [viewer.playerId, tenant.id, competitionId, now, now]);
             }
             catch (err) {
                 // TODO: catch duplicate error
