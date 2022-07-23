@@ -18,3 +18,33 @@ You can specify git branch name by use `GIT_BRANCH`
 make deploy GIT_BRANCH=feature-nplus1
 ```
 
+## ローカル起動
+
+ISUCON12-qualify ディレクトリで以下を順に実行。
+
+initial_data をコピー
+
+```
+scp -r isu1:initial_data .
+```
+
+mysql 起動
+
+```
+docker-compose up -d
+```
+
+```
+cd webapp/node
+npm ci # 初回だけ
+npm run serve
+```
+
+初期化
+
+```
+curl -X POST localhost:3000/initialize
+```
+
+TODO: 認証
+TODO: public ファイル

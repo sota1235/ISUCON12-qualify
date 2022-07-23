@@ -5,13 +5,17 @@ GIT_BRANCH=main
 # 競技に合わせて書き換える
 HOME=/home/isucon
 SSH_NAME=isu1
-WEB_APP_DIR="webapp/node" # server上のhomeディレクトリから辿ったアプリのディレクトリ
+WEB_APP_DIR=webapp/node # server上のhomeディレクトリから辿ったアプリのディレクトリ
 SERVICE_NAME="isuports.service" # systemctlで管理されているサービス名を設定
 # MySQL
 MYSQL_SLOW_QUERY_LOG=/var/log/mysql/mariadb-slow.log
 MYSQL_USER=isucon
 MYSQL_PASS=isucon
 MYSQL_DB=isuports
+# NODE
+NPM=/home/isucon/.nvm/versions/node/v18.6.0/bin/npm
+NODE=/home/isucon/.nvm/versions/node/v18.6.0/bin/node
+EXPORT_PATH='export PATH=/home/isucon/.nvm/versions/node/v18.6.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin'
 
 .PHONY: test
 test:
@@ -76,11 +80,25 @@ setup-git: ## Gitの設定
 .PHONY: deploy
 deploy: deploy_db_settings ## Deploy all
 	## WebApp Deployment
-	ssh $(SSH_NAME) "cd $(HOME) && git pull"
+	# cd webapp/node && npm i && cd ../..
+	# npm run --prefix webapp/node build
+	rsync -av ./webapp/node/build $(SSH_NAME):$(HOME)/webapp/node
+	ssh $(SSH_NAME) "cd $(HOME) && git pull && git merge origin/main"
 	ssh $(SSH_NAME) "cd $(HOME) && git checkout $(GIT_BRANCH)"
-	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && npm i && npm run build"
-	ssh $(SSH_NAME) "sudo systemctl restart $(SERVICE_NAME)"
-	ssh $(SSH_NAME) "sudo systemctl restart nginx"
+	ssh $(SSH_NAME) "cd $(HOME) && make deploy_remote"
+	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && $(NPM) i"
+	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && $(NPM) run build"
+	# ssh $(SSH_NAME) "sudo systemctl daemon-reload"
+	# ssh $(SSH_NAME) "sudo systemctl restart $(SERVICE_NAME)"
+	# ssh $(SSH_NAME) "sudo systemctl restart nginx"
+
+.PHONY: deploy_remote
+deploy_remote: ## remoteで実行する
+	# $(EXPORT_PATH) && cd $(HOME)/$(WEB_APP_DIR) && npm i
+	# $(EXPORT_PATH) && cd $(HOME)/$(WEB_APP_DIR) && npm run build
+	sudo systemctl daemon-reload
+	sudo systemctl restart $(SERVICE_NAME)
+	sudo systemctl restart nginx
 
 .PHONY: deploy_db_settings
 deploy_db_settings: ## Deploy /etc configs
@@ -89,9 +107,12 @@ deploy_db_settings: ## Deploy /etc configs
 	# ssh $(SSH_NAME) "sudo systemctl restart postgresql-*"
 
 # Util
+.PHONY: maintenance
+maintenance: ## メンテナンスコマンド
+	ssh $(SSH_NAME) "sudo /usr/local/bin/isucon-env-checker" # メンテナンスコマンド
+
 .PHONY: health_check
-health_check: ## 各サービスの状態をチェック
-	ssh $(SSH_NAME) "sudo /opt/isucon-env-checker/isucon-env-checker" # メンテナンスコマンド
+health_check: maintenance ## 各サービスの状態をチェック
 	ssh $(SSH_NAME) "sudo systemctl status $(SERVICE_NAME)"
 	ssh $(SSH_NAME) "sudo systemctl status nginx"
 	ssh $(SSH_NAME) "sudo systemctl status mysql"
@@ -107,10 +128,10 @@ bench_pre: ## ベンチマーク実行前の処理
 	ssh $(SSH_NAME) "sudo systemctl restart nginx"
 	ssh $(SSH_NAME) "sudo chmod 777 /var/log/nginx /var/log/nginx/*"
 	# mysqlのslow queryのsnapshotを作成
-	ssh $(SSH_NAME) "if [ -f $(MYSQL_SLOW_QUERY_LOG) ]; then sudo mv $(MYSQL_SLOW_QUERY_LOG) $(MYSQL_SLOW_QUERY_LOG).`date +%Y%m%d-%H%M%S`; fi"
-	ssh $(SSH_NAME) "sudo systemctl restart mysql"
+	# ssh $(SSH_NAME) "if [ -f $(MYSQL_SLOW_QUERY_LOG) ]; then sudo mv $(MYSQL_SLOW_QUERY_LOG) $(MYSQL_SLOW_QUERY_LOG).`date +%Y%m%d-%H%M%S`; fi"
+	# ssh $(SSH_NAME) "sudo systemctl restart mysql"
 	# mysql slow queryを有効化
-	ssh $(SSH_NAME) "sudo mysql -u$(MYSQL_USER) -p$(MYSQL_PASS) $(MYSQL_DB) < $(HOME)/tools/mysql/set_slow_query.sql"
+	# ssh $(SSH_NAME) "sudo mysql -u$(MYSQL_USER) -p$(MYSQL_PASS) $(MYSQL_DB) < $(HOME)/tools/mysql/set_slow_query.sql"
 
 .PHONY: bench_run
 bench_run: ## ベンチマークの実行
@@ -121,13 +142,13 @@ bench_post: ## ベンチマーク実行後の処理
 	# Kataribeの解析結果をSlackに投稿
 	ssh $(SSH_NAME) "cat /var/log/nginx/access.log | $(KATARIBE_COMMAND) | $(NOTIFY_SLACK_COMMAND) -filename 'アクセスログ解析結果 by kataribe'"
 	# pt-query-digest解析結果をSlackに投稿
-	ssh $(SSH_NAME) "sudo chmod 777 /tmp/slow.log"
-	ssh $(SSH_NAME) "pt-query-digest /tmp/slow.log > /tmp/digest.txt"
-	ssh $(SSH_NAME) "cat /tmp/digest.txt | $(NOTIFY_SLACK_COMMAND) -filename 'SQL解析結果 by pt-query-digest'"
-	ssh $(SSH_NAME) "sudo systemctl restart mariadb.service"
+	# ssh $(SSH_NAME) "sudo chmod 777 /tmp/slow.log"
+	# ssh $(SSH_NAME) "pt-query-digest /tmp/slow.log > /tmp/digest.txt"
+	# ssh $(SSH_NAME) "cat /tmp/digest.txt | $(NOTIFY_SLACK_COMMAND) -filename 'SQL解析結果 by pt-query-digest'"
+	# ssh $(SSH_NAME) "sudo systemctl restart mysql.service"
 
 .PHONY: for_end
-for_end: ## 終了前の掃除
+for_end: maintenance ## 終了前の掃除
 	# netdataの終了
 	ssh $(SSH_NAME) "sudo systemctl stop netdata"
 	ssh $(SSH_NAME) "sudo systemctl disable netdata"
