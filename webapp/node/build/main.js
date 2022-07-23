@@ -23,6 +23,7 @@ const sqltrace_1 = require("./sqltrace");
 const exec = util_1.default.promisify(child_process_1.default.exec);
 const flock = util_1.default.promisify(fs_ext_1.default.flock);
 // constants
+const tenantDBSchemaFilePath = '../sql/tenant/10_schema.sql';
 const initializeScript = '../sql/init.sh';
 const cookieName = 'isuports_session';
 const RoleAdmin = 'admin';
@@ -44,7 +45,7 @@ const dbConfig = {
     port: Number(process.env['ISUCON_DB_PORT'] ?? 3306),
     user: process.env['ISUCON_DB_USER'] ?? 'isucon',
     password: process.env['ISUCON_DB_PASSWORD'] ?? 'isucon',
-    database: process.env['ISUCON_DB_NAME'] ?? 'isuports',
+    database: process.env['ISUCON_DB_NAME'] ?? 'isucon_listen80',
 };
 const adminDB = promise_1.default.createPool(dbConfig);
 // テナントDBのパスを返す
@@ -71,6 +72,16 @@ async function connectToTenantDB(id) {
         throw new Error(`failed to open tenant DB: ${error}`);
     }
     return db;
+}
+// テナントDBを新規に作成する
+async function createTenantDB(id) {
+    const p = tenantDBPath(id);
+    try {
+        await exec(`sh -c "sqlite3 ${p} < ${tenantDBSchemaFilePath}"`);
+    }
+    catch (error) {
+        return new Error(`failed to exec "sqlite3 ${p} < ${tenantDBSchemaFilePath}", out=${error.stderr}`);
+    }
 }
 // システム全体で一意なIDを生成する
 async function dispenseID() {
@@ -202,7 +213,7 @@ async function retrieveTenantRowFromHeader(req) {
 async function retrievePlayer(tenantDB, id, columns = ['*']) {
     try {
         const selectRow = columns.join(',');
-        const [[playerRow]] = await adminDB.query(`SELECT ${selectRow} FROM player WHERE id = ?`, id);
+        const playerRow = await tenantDB.get(`SELECT ${selectRow} FROM player WHERE id = ?`, id);
         return playerRow;
     }
     catch (error) {
@@ -229,7 +240,7 @@ async function authorizePlayer(tenantDB, id) {
 // 大会を取得する
 async function retrieveCompetition(tenantDB, id) {
     try {
-        const [[competitionRow]] = await adminDB.query('SELECT * FROM competition WHERE id = ?', [id]);
+        const competitionRow = await tenantDB.get('SELECT * FROM competition WHERE id = ?', id);
         return competitionRow;
     }
     catch (error) {
@@ -297,6 +308,13 @@ app.post('/api/admin/tenants/add', wrap(async (req, res) => {
             }
             throw new Error(`error Insert tenant: name=${name}, displayName=${display_name}, createdAt=${now}, updatedAt=${now}, ${error}`);
         }
+        // NOTE: 先にadminDBに書き込まれることでこのAPIの処理中に
+        //       /api/admin/tenants/billingにアクセスされるとエラーになりそう
+        //       ロックなどで対処したほうが良さそう
+        const error = await createTenantDB(id);
+        if (error) {
+            throw new Error(`error createTenantDB: id=${id} name=${name}, ${error}`);
+        }
         const data = {
             tenant: {
                 id: id.toString(),
@@ -331,7 +349,13 @@ async function billingReportByCompetition(tenantDB, tenantId, competitionId) {
         throw Error('error retrieveCompetition on billingReportByCompetition');
     }
     // ランキングにアクセスした参加者のIDを取得する
-    const [vhs] = await adminDB.query('SELECT player_id, created_at AS min_created_at FROM first_visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id', [tenantId, comp.id]);
+    /**
+    const [vhs] = await adminDB.query<(VisitHistorySummaryRow & RowDataPacket)[]>(
+      'SELECT player_id, created_at AS min_created_at FROM first_visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id',
+      [tenantId, comp.id]
+    )
+     */
+    const [vhs] = await adminDB.query('SELECT player_id, MIN(created_at) AS min_created_at FROM visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id', [tenantId, comp.id]);
     const billingMap = {};
     for (const vh of vhs) {
         // competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
@@ -344,7 +368,7 @@ async function billingReportByCompetition(tenantDB, tenantId, competitionId) {
     const unlock = await flockByTenantID(tenantId);
     try {
         // スコアを登録した参加者のIDを取得する
-        const [scoredPlayerIds] = await adminDB.query('SELECT DISTINCT(player_id) FROM player_score WHERE tenant_id = ? AND competition_id = ?', [tenantId, comp.id]);
+        const scoredPlayerIds = await tenantDB.all('SELECT DISTINCT(player_id) FROM player_score WHERE tenant_id = ? AND competition_id = ?', tenantId, comp.id);
         for (const pid of scoredPlayerIds) {
             // スコアが登録されている参加者
             billingMap[pid.player_id] = 'player';
@@ -428,7 +452,7 @@ app.get('/api/admin/tenants/billing', wrap(async (req, res) => {
             };
             const tenantDB = await connectToTenantDB(tenant.id);
             try {
-                const [competitions] = await adminDB.query('SELECT * FROM competition WHERE tenant_id = ?', [tenant.id]);
+                const competitions = await tenantDB.all('SELECT * FROM competition WHERE tenant_id = ?', tenant.id);
                 for (const comp of competitions) {
                     const report = await billingReportByCompetition(tenantDB, tenant.id, comp.id);
                     tb.billing += report.billing_yen;
@@ -469,7 +493,7 @@ app.get('/api/organizer/players', wrap(async (req, res) => {
         const pds = [];
         const tenantDB = await connectToTenantDB(viewer.tenantId);
         try {
-            const [pls] = await adminDB.query('SELECT * FROM player WHERE tenant_id = ? ORDER BY created_at DESC', [viewer.tenantId]);
+            const pls = await tenantDB.all('SELECT * FROM player WHERE tenant_id = ? ORDER BY created_at DESC', viewer.tenantId);
             pds.push(...pls.map((player) => ({
                 id: player.id,
                 display_name: player.display_name,
@@ -511,12 +535,7 @@ app.post('/api/organizer/players/add', wrap(async (req, res) => {
                 const id = await dispenseID();
                 const now = Math.floor(new Date().getTime() / 1000);
                 try {
-                    await adminDB.query('INSERT INTO player (id, tenant_id, display_name, is_disqualified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', [id,
-                        viewer.tenantId,
-                        displayName,
-                        false,
-                        now,
-                        now]);
+                    await tenantDB.run('INSERT INTO player (id, tenant_id, display_name, is_disqualified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', id, viewer.tenantId, displayName, false, now, now);
                 }
                 catch (error) {
                     throw new Error(`error Insert player at tenantDB: tenantId=${viewer.tenantId} id=${id}, displayName=${displayName}, isDisqualified=false, createdAt=${now}, updatedAt=${now}, ${error}`);
@@ -568,7 +587,7 @@ app.post('/api/organizer/player/:playerId/disqualified', wrap(async (req, res) =
         const tenantDB = await connectToTenantDB(viewer.tenantId);
         try {
             try {
-                await adminDB.query('UPDATE player SET is_disqualified = ?, updated_at = ? WHERE id = ?', [true, now, playerId]);
+                await tenantDB.run('UPDATE player SET is_disqualified = ?, updated_at = ? WHERE id = ?', true, now, playerId);
             }
             catch (error) {
                 throw new Error(`error Update player: isDisqualified=true, updatedAt=${now}, id=${playerId}, ${error}`);
@@ -623,12 +642,7 @@ app.post('/api/organizer/competitions/add', wrap(async (req, res) => {
         const id = await dispenseID();
         const tenantDB = await connectToTenantDB(viewer.tenantId);
         try {
-            await adminDB.query('INSERT INTO competition (id, tenant_id, title, finished_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', [id,
-                viewer.tenantId,
-                title,
-                null,
-                now,
-                now]);
+            await tenantDB.run('INSERT INTO competition (id, tenant_id, title, finished_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', id, viewer.tenantId, title, null, now, now);
         }
         catch (error) {
             throw new Error(`error Insert competition: id=${id}, tenant_id=${viewer.tenantId}, title=${title}, finishedAt=null, createdAt=${now}, updatedAt=${now}, ${error}`);
@@ -675,9 +689,7 @@ app.post('/api/organizer/competition/:competitionId/finish', wrap(async (req, re
             if (!competition) {
                 throw new ErrorWithStatus(404, 'competition not found');
             }
-            await adminDB.query('UPDATE competition SET finished_at = ?, updated_at = ? WHERE id = ?', [now,
-                now,
-                competitionId]);
+            await tenantDB.run('UPDATE competition SET finished_at = ?, updated_at = ? WHERE id = ?', now, now, competitionId);
         }
         finally {
             tenantDB.close();
@@ -768,19 +780,18 @@ app.post('/api/organizer/competition/:competitionId/score', upload.single('score
                         updated_at: now,
                     });
                 }
-                await adminDB.query('DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?', [viewer.tenantId,
-                    competitionId]);
+                await tenantDB.run('DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?', viewer.tenantId, competitionId);
                 for (const row of playerScoreRows) {
-                    await adminDB.query('INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
-                        row.id,
-                        row.tenant_id,
-                        row.player_id,
-                        row.competition_id,
-                        row.score,
-                        row.row_num,
-                        row.created_at,
-                        row.updated_at,
-                    ]);
+                    await tenantDB.run('INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES ($id, $tenant_id, $player_id, $competition_id, $score, $row_num, $created_at, $updated_at)', {
+                        $id: row.id,
+                        $tenant_id: row.tenant_id,
+                        $player_id: row.player_id,
+                        $competition_id: row.competition_id,
+                        $score: row.score,
+                        $row_num: row.row_num,
+                        $created_at: row.created_at,
+                        $updated_at: row.updated_at,
+                    });
                 }
             }
             finally {
@@ -823,7 +834,7 @@ app.get('/api/organizer/billing', wrap(async (req, res) => {
         const reports = [];
         const tenantDB = await connectToTenantDB(viewer.tenantId);
         try {
-            const [competitions] = await adminDB.query('SELECT * FROM competition WHERE tenant_id=? ORDER BY created_at DESC', [viewer.tenantId]);
+            const competitions = await tenantDB.all('SELECT * FROM competition WHERE tenant_id=? ORDER BY created_at DESC', viewer.tenantId);
             for (const comp of competitions) {
                 const report = await billingReportByCompetition(tenantDB, viewer.tenantId, comp.id);
                 reports.push(report);
@@ -849,7 +860,7 @@ app.get('/api/organizer/billing', wrap(async (req, res) => {
 }));
 async function competitionsHandler(req, res, viewer, tenantDB) {
     try {
-        const [competitions] = await adminDB.query('SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at DESC', [viewer.tenantId]);
+        const competitions = await tenantDB.all('SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at DESC', viewer.tenantId);
         const cds = competitions.map((comp) => ({
             id: comp.id,
             title: comp.title,
@@ -924,17 +935,15 @@ app.get('/api/player/player/:playerId', wrap(async (req, res) => {
                 display_name: p.display_name,
                 is_disqualified: !!p.is_disqualified,
             };
-            const [competitions] = await adminDB.query('SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC', [viewer.tenantId]);
+            const competitions = await tenantDB.all('SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC', viewer.tenantId);
             const pss = [];
             // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
             const unlock = await flockByTenantID(viewer.tenantId);
             try {
                 for (const comp of competitions) {
+                    const ps = await tenantDB.get(
                     // 最後にCSVに登場したスコアを採用する = row_numが一番大きいもの
-                    // todo: Order by 不要かも
-                    const [[ps]] = await adminDB.query('SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1', [viewer.tenantId,
-                        comp.id,
-                        p.id]);
+                    'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1', viewer.tenantId, comp.id, p.id);
                     if (!ps) {
                         // 行がない = スコアが記録されてない
                         continue;
@@ -1010,7 +1019,13 @@ app.get('/api/player/competition/:competitionId/ranking', wrap(async (req, res) 
                 viewer.tenantId,
             ]);
             try {
-                await adminDB.execute('INSERT INTO first_visit_history (player_id, tenant_id, competition_id, created_at) VALUES (?, ?, ?, ?)', [viewer.playerId, tenant.id, competitionId, now]);
+                /**
+                await adminDB.execute<OkPacket>(
+                  'INSERT INTO first_visit_history (player_id, tenant_id, competition_id, created_at) VALUES (?, ?, ?, ?)',
+                  [viewer.playerId, tenant.id, competitionId, now]
+                )
+                 */
+                await adminDB.execute('INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)', [viewer.playerId, tenant.id, competitionId, now, now]);
             }
             catch (err) {
                 // TODO: catch duplicate error
@@ -1023,8 +1038,7 @@ app.get('/api/player/competition/:competitionId/ranking', wrap(async (req, res) 
             // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
             const unlock = await flockByTenantID(tenant.id);
             try {
-                const [pss] = await adminDB.query('SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? ORDER BY row_num DESC', [tenant.id,
-                    competition.id]);
+                const pss = await tenantDB.all('SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? ORDER BY row_num DESC', tenant.id, competition.id);
                 const scoredPlayerSet = {};
                 const tmpRanks = [];
                 for (const ps of pss) {
@@ -1182,41 +1196,6 @@ app.get('/api/me', wrap(async (req, res) => {
         }
         throw new ErrorWithStatus(500, error);
     }
-}));
-async function moveToMysqlFromSqlite() {
-    for (let i = 1; i <= 100; i++) {
-        const tenantDB = await connectToTenantDB(i);
-        const competitions = await tenantDB.all('SELECT * FROM competition');
-        const promises = [];
-        for (const c of competitions) {
-            promises.push(adminDB.query('INSERT INTO competition (id, tenant_id, title, finished_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', [c['id'], c['tenant_id'], c['title'], c['finished_at'], c['created_at'], c['updated_at']]));
-        }
-        const players = await tenantDB.all('SELECT * FROM player');
-        for (const p of players) {
-            promises.push(adminDB.query('INSERT INTO player (id, tenant_id, display_name, is_disqualified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', [p['id'], p['tenant_id'], p['display_name'], p['is_disqualified'], p['created_at'], p['updated_at']]));
-        }
-        const playerScores = await tenantDB.all('select id,\n' +
-            '       t1.tenant_id,\n' +
-            '       t1.competition_id,\n' +
-            '       t1.player_id,\n' +
-            '       score,\n' +
-            '       row_num,\n' +
-            '       created_at,\n' +
-            '       updated_at\n' +
-            'from player_score as t1\n' +
-            '         join (select tenant_id, competition_id, player_id, max(row_num) as max_row_num\n' +
-            '               from player_score as t2\n' +
-            '               group by tenant_id, competition_id, player_id) as t3\n' +
-            '              on t1.tenant_id = t3.tenant_id and t1.competition_id = t3.competition_id and\n' +
-            '                 t1.player_id = t3.player_id and t1.row_num = t3.max_row_num');
-        for (const ps of playerScores) {
-            promises.push(adminDB.query('INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [ps['id'], ps['tenant_id'], ps['player_id'], ps['competition_id'], ps['score'], ps['row_num'], ps['created_at'], ps['updated_at']]));
-        }
-        await Promise.all(promises);
-    }
-}
-app.post('/initialize_data', wrap(async (req, res, _next) => {
-    await moveToMysqlFromSqlite();
 }));
 // ベンチマーカー向けAPI
 // POST /initialize
