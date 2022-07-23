@@ -91,8 +91,8 @@ deploy: deploy_db_settings ## Deploy all
 
 .PHONY: deploy_remote
 deploy_remote: ## remoteで実行する
-	$(EXPORT_PATH) && cd $(HOME)/$(WEB_APP_DIR) && npm i
-	$(EXPORT_PATH) && cd $(HOME)/$(WEB_APP_DIR) && npm run build
+	# $(EXPORT_PATH) && cd $(HOME)/$(WEB_APP_DIR) && npm i
+	# $(EXPORT_PATH) && cd $(HOME)/$(WEB_APP_DIR) && npm run build
 	sudo systemctl daemon-reload
 	sudo systemctl restart $(SERVICE_NAME)
 	sudo systemctl restart nginx
