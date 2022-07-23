@@ -93,6 +93,8 @@ async function createTenantDB(id: number): Promise<Error | undefined> {
 
 // システム全体で一意なIDを生成する
 async function dispenseID(): Promise<string> {
+  return Math.random().toString(32).substring(2);
+  /**
   let id = 0
   let lastErr: any
   for (const _ of Array(100)) {
@@ -113,6 +115,7 @@ async function dispenseID(): Promise<string> {
   }
 
   throw new Error(`error REPLACE INTO id_generator: ${lastErr.toString()}`)
+   */
 }
 
 // カスタムエラーハンドラにステータスコード拾ってもらうエラー型
