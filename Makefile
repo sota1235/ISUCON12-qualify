@@ -80,8 +80,8 @@ setup-git: ## Gitの設定
 .PHONY: deploy
 deploy: deploy_db_settings ## Deploy all
 	## WebApp Deployment
-	cd webapp/node && npm i
-	cd webapp/node && npm run build
+	npm i --prefix webapp/node
+	npm run --prefix webapp/node build
 	rsync -av ./webapp/node/node_modules $(SSH_NAME):$(HOMDE)/webapp/node
 	rsync -av ./webapp/node/build $(SSH_NAME):$(HOMDE)/webapp/node
 	ssh $(SSH_NAME) "cd $(HOME) && git pull && git merge origin/main"
