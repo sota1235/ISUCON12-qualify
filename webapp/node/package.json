@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node build/main.js",
+    "start": "/home/isucon/.nvm/versions/node/v18.6.0/bin/node build/main.js",
     "serve": "ts-node --transpile-only src/main.ts",
     "lint": "eslint ./src --ext .ts",
     "format": "prettier --write src/"
