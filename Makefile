@@ -5,13 +5,16 @@ GIT_BRANCH=main
 # 競技に合わせて書き換える
 HOME=/home/isucon
 SSH_NAME=isu1
-WEB_APP_DIR="webapp/node" # server上のhomeディレクトリから辿ったアプリのディレクトリ
+WEB_APP_DIR=webapp/node # server上のhomeディレクトリから辿ったアプリのディレクトリ
 SERVICE_NAME="isuports.service" # systemctlで管理されているサービス名を設定
 # MySQL
 MYSQL_SLOW_QUERY_LOG=/var/log/mysql/mariadb-slow.log
 MYSQL_USER=isucon
 MYSQL_PASS=isucon
 MYSQL_DB=isuports
+# NODE
+NPM=/home/isucon/.nvm/versions/node/v18.6.0/bin/npm
+NODE=/home/isucon/.nvm/versions/node/v18.6.0/bin/node
 
 .PHONY: test
 test:
@@ -78,9 +81,22 @@ deploy: deploy_db_settings ## Deploy all
 	## WebApp Deployment
 	ssh $(SSH_NAME) "cd $(HOME) && git pull"
 	ssh $(SSH_NAME) "cd $(HOME) && git checkout $(GIT_BRANCH)"
-	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && npm i && npm run build"
-	ssh $(SSH_NAME) "sudo systemctl restart $(SERVICE_NAME)"
-	ssh $(SSH_NAME) "sudo systemctl restart nginx"
+	ssh $(SSH_NAME) "cd $(HOME) && make deploy_remote"
+	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && $(NPM) i"
+	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && $(NPM) run build"
+	# ssh $(SSH_NAME) "sudo systemctl daemon-reload"
+	# ssh $(SSH_NAME) "sudo systemctl restart $(SERVICE_NAME)"
+	# ssh $(SSH_NAME) "sudo systemctl restart nginx"
+
+.PHONY: deploy_remote
+deploy_remote: ## remoteで実行する
+	export PATH=$PATH:/home/isucon/.nvm/versions/node/v18.6.0/bin
+	cd $(HOME)/$(WEB_APP_DIR)
+	npm i
+	npm run build
+	sudo systemctl daemon-reload
+	sudo systemctl restart $(SERVICE_NAME)
+	sudo systemctl restart nginx
 
 .PHONY: deploy_db_settings
 deploy_db_settings: ## Deploy /etc configs
