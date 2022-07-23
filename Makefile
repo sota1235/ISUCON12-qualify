@@ -11,7 +11,7 @@ SERVICE_NAME="isucondition.nodejs.service" # systemctlで管理されている�
 MYSQL_SLOW_QUERY_LOG=/var/log/mysql/mariadb-slow.log
 MYSQL_USER=isucon
 MYSQL_PASS=isucon
-MYSQL_DB=isucondition
+MYSQL_DB=isuports
 
 .PHONY: test
 test:
