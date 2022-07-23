@@ -91,7 +91,7 @@ deploy_db_settings: ## Deploy /etc configs
 # Util
 .PHONY: maintenance
 maintenance: ## メンテナンスコマンド
-	ssh $(SSH_NAME) "sudo /opt/isucon-env-checker/isucon-env-checker" # メンテナンスコマンド
+	ssh $(SSH_NAME) "sudo /usr/local/bin/isucon-env-checker" # メンテナンスコマンド
 
 .PHONY: health_check
 health_check: maintenance ## 各サービスの状態をチェック
