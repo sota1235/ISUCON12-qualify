@@ -1,5 +1,5 @@
 Host isu1
-    HostName ${IP Address}
+    HostName 54.65.219.178
     Port 22
     User isucon
     IdentityFile ~/.ssh/id_rsa
@@ -12,7 +12,7 @@ Host isu1
     LocalForward 19999 localhost:19999 # netdata
 
 Host isu2
-    HostName ${IP Address}
+    HostName 52.193.199.110
     Port 22
     User isucon
     IdentityFile ~/.ssh/id_rsa
@@ -25,7 +25,7 @@ Host isu2
     LocalForward 19999 localhost:19999 # netdata
 
 Host isu3
-    HostName ${IP Address}
+    HostName 52.68.222.247
     Port 22
     User isucon
     IdentityFile ~/.ssh/id_rsa
