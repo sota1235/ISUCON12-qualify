@@ -1561,11 +1561,19 @@ app.post(
 
 // エラー処理関数
 app.use((err: ErrorWithStatus, req: Request, res: Response, _next: NextFunction) => {
+  console.error(req.method, req.path, err.stack)
   console.error('error occurred: status=' + err.status + ' reason=' + err.message)
   res.status(err.status).json({
     status: false,
   })
 })
+
+const runLocal = getEnv('RUN_LOCAL', '')
+if (runLocal == 'TRUE') {
+  // Express 4 以降（npm install morgan しておく）
+  app.use(morgan('short'))
+  app.use(express.static('../../public'))
+}
 
 const port = getEnv('SERVER_APP_PORT', '3000')
 console.log('starting isuports server on :' + port + ' ...')

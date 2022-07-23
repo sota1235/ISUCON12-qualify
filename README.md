@@ -37,7 +37,7 @@ docker-compose up -d
 ```
 cd webapp/node
 npm ci # 初回だけ
-npm run serve
+RUN_LOCAL=TRUE ISUCON_DB_NAME=isuports npm run serve
 ```
 
 初期化
