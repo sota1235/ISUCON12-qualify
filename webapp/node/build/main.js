@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 require('newrelic');
+const client_1 = require("@redis/client");
 const express_1 = __importDefault(require("express"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const body_parser_1 = __importDefault(require("body-parser"));
@@ -83,27 +84,47 @@ async function createTenantDB(id) {
         return new Error(`failed to exec "sqlite3 ${p} < ${tenantDBSchemaFilePath}", out=${error.stderr}`);
     }
 }
+// Redis client
+const redisClient = (0, client_1.createClient)({
+    url: 'redis://192.168.0.13:6379', // isu3
+});
+async function getFromCache(key, func) {
+    if (!await redisClient.exists(key)) {
+        // @ts-ignore
+        return JSON.parse(await redisClient.get(key));
+    }
+    const result = await func();
+    await redisClient.set(key, JSON.stringify(result));
+    return result;
+}
+async function clearCache(key) {
+    await redisClient.del(key);
+}
 // システム全体で一意なIDを生成する
 async function dispenseID() {
-    let id = 0;
-    let lastErr;
+    return Math.random().toString(32).substring(2);
+    /**
+    let id = 0
+    let lastErr: any
     for (const _ of Array(100)) {
-        try {
-            const [result] = await adminDB.execute('REPLACE INTO id_generator (stub) VALUES (?)', ['a']);
-            id = result.insertId;
-            break;
+      try {
+        const [result] = await adminDB.execute<OkPacket>('REPLACE INTO id_generator (stub) VALUES (?)', ['a'])
+  
+        id = result.insertId
+        break
+      } catch (error: any) {
+        // deadlock
+        if (error.errno && error.errno === 1213) {
+          lastErr = error
         }
-        catch (error) {
-            // deadlock
-            if (error.errno && error.errno === 1213) {
-                lastErr = error;
-            }
-        }
+      }
     }
     if (id !== 0) {
-        return id.toString(16);
+      return id.toString(16)
     }
-    throw new Error(`error REPLACE INTO id_generator: ${lastErr.toString()}`);
+  
+    throw new Error(`error REPLACE INTO id_generator: ${lastErr.toString()}`)
+     */
 }
 // カスタムエラーハンドラにステータスコード拾ってもらうエラー型
 class ErrorWithStatus extends Error {
@@ -206,9 +227,10 @@ async function retrieveTenantRowFromHeader(req) {
     }
 }
 // 参加者を取得する
-async function retrievePlayer(tenantDB, id) {
+async function retrievePlayer(tenantDB, id, columns = ['*']) {
     try {
-        const playerRow = await tenantDB.get('SELECT * FROM player WHERE id = ?', id);
+        const selectRow = columns.join(',');
+        const playerRow = await tenantDB.get(`SELECT ${selectRow} FROM player WHERE id = ?`, id);
         return playerRow;
     }
     catch (error) {
@@ -219,7 +241,7 @@ async function retrievePlayer(tenantDB, id) {
 // 参加者向けAPIで呼ばれる
 async function authorizePlayer(tenantDB, id) {
     try {
-        const player = await retrievePlayer(tenantDB, id);
+        const player = await retrievePlayer(tenantDB, id, ['is_disqualified']);
         if (!player) {
             throw new ErrorWithStatus(401, 'player not found');
         }
@@ -344,7 +366,7 @@ async function billingReportByCompetition(tenantDB, tenantId, competitionId) {
         throw Error('error retrieveCompetition on billingReportByCompetition');
     }
     // ランキングにアクセスした参加者のIDを取得する
-    const [vhs] = await adminDB.query('SELECT player_id, MIN(created_at) AS min_created_at FROM visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id', [tenantId, comp.id]);
+    const [vhs] = await adminDB.query('SELECT player_id, created_at AS min_created_at FROM first_visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id', [tenantId, comp.id]);
     const billingMap = {};
     for (const vh of vhs) {
         // competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
@@ -529,7 +551,7 @@ app.post('/api/organizer/players/add', wrap(async (req, res) => {
                 catch (error) {
                     throw new Error(`error Insert player at tenantDB: tenantId=${viewer.tenantId} id=${id}, displayName=${displayName}, isDisqualified=false, createdAt=${now}, updatedAt=${now}, ${error}`);
                 }
-                const player = await retrievePlayer(tenantDB, id);
+                const player = await retrievePlayer(tenantDB, id, ['id', 'display_name', 'is_disqualified']);
                 if (!player) {
                     throw new Error('error retrievePlayer id=${id}');
                 }
@@ -581,7 +603,7 @@ app.post('/api/organizer/player/:playerId/disqualified', wrap(async (req, res) =
             catch (error) {
                 throw new Error(`error Update player: isDisqualified=true, updatedAt=${now}, id=${playerId}, ${error}`);
             }
-            const player = await retrievePlayer(tenantDB, playerId);
+            const player = await retrievePlayer(tenantDB, playerId, ['id', 'display_name', 'is_disqualified']);
             if (!player) {
                 // 存在しないプレイヤー
                 throw new ErrorWithStatus(404, 'player not found');
@@ -747,7 +769,7 @@ app.post('/api/organizer/competition/:competitionId/score', upload.single('score
                         throw new Error('row must have two columns ${record}');
                     }
                     const { player_id, score: scoreStr } = record;
-                    const p = await retrievePlayer(tenantDB, player_id);
+                    const p = await retrievePlayer(tenantDB, player_id, ['id']);
                     if (!p) {
                         // 存在しない参加者が含まれている
                         throw new ErrorWithStatus(400, `player not found: ${player_id}`);
@@ -911,47 +933,49 @@ app.get('/api/player/player/:playerId', wrap(async (req, res) => {
         const psds = [];
         const tenantDB = await connectToTenantDB(viewer.tenantId);
         try {
-            const error = await authorizePlayer(tenantDB, viewer.playerId);
-            if (error) {
-                throw error;
-            }
-            const p = await retrievePlayer(tenantDB, playerId);
+            const p = await getFromCache(`player:${playerId}`, () => retrievePlayer(tenantDB, playerId, ['id', 'display_name', 'is_disqualified']));
             if (!p) {
                 throw new ErrorWithStatus(404, 'player not found');
+            }
+            if (p.is_disqualified) {
+                throw new ErrorWithStatus(403, 'player is disqualified');
             }
             pd = {
                 id: p.id,
                 display_name: p.display_name,
                 is_disqualified: !!p.is_disqualified,
             };
-            const competitions = await tenantDB.all('SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC', viewer.tenantId);
+            const competitions = await getFromCache(`competition:${viewer.tenantId}`, () => tenantDB.all('SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC', viewer.tenantId));
             const pss = [];
-            // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
-            const unlock = await flockByTenantID(viewer.tenantId);
-            try {
-                for (const comp of competitions) {
-                    const ps = await tenantDB.get(
-                    // 最後にCSVに登場したスコアを採用する = row_numが一番大きいもの
-                    'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1', viewer.tenantId, comp.id, p.id);
-                    if (!ps) {
-                        // 行がない = スコアが記録されてない
-                        continue;
+            // competitionsが0件だったらロック取らなくていい
+            if (competitions.length > 0) {
+                // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
+                const unlock = await flockByTenantID(viewer.tenantId);
+                try {
+                    for (const comp of competitions) {
+                        const ps = await tenantDB.get(
+                        // 最後にCSVに登場したスコアを採用する = row_numが一番大きいもの
+                        'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1', viewer.tenantId, comp.id, p.id);
+                        if (!ps) {
+                            // 行がない = スコアが記録されてない
+                            continue;
+                        }
+                        pss.push(ps);
                     }
-                    pss.push(ps);
-                }
-                for (const ps of pss) {
-                    const comp = await retrieveCompetition(tenantDB, ps.competition_id);
-                    if (!comp) {
-                        throw new Error('error retrieveCompetition');
+                    for (const ps of pss) {
+                        const comp = await retrieveCompetition(tenantDB, ps.competition_id);
+                        if (!comp) {
+                            throw new Error('error retrieveCompetition');
+                        }
+                        psds.push({
+                            competition_title: comp?.title,
+                            score: ps.score,
+                        });
                     }
-                    psds.push({
-                        competition_title: comp?.title,
-                        score: ps.score,
-                    });
                 }
-            }
-            finally {
-                unlock();
+                finally {
+                    unlock();
+                }
             }
         }
         finally {
@@ -1007,7 +1031,12 @@ app.get('/api/player/competition/:competitionId/ranking', wrap(async (req, res) 
             const [[tenant]] = await adminDB.query('SELECT * FROM tenant WHERE id = ?', [
                 viewer.tenantId,
             ]);
-            await adminDB.execute('INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)', [viewer.playerId, tenant.id, competitionId, now, now]);
+            try {
+                await adminDB.execute('INSERT INTO first_visit_history (player_id, tenant_id, competition_id, created_at) VALUES (?, ?, ?, ?)', [viewer.playerId, tenant.id, competitionId, now]);
+            }
+            catch (err) {
+                // TODO: catch duplicate error
+            }
             const { rank_after: rankAfterStr } = req.query;
             let rankAfter;
             if (rankAfterStr) {
@@ -1026,7 +1055,7 @@ app.get('/api/player/competition/:competitionId/ranking', wrap(async (req, res) 
                         continue;
                     }
                     scoredPlayerSet[ps.player_id] = 1;
-                    const p = await retrievePlayer(tenantDB, ps.player_id);
+                    const p = await retrievePlayer(tenantDB, ps.player_id, ['id', 'display_name']);
                     if (!p) {
                         throw new Error('error retrievePlayer');
                     }
@@ -1136,7 +1165,7 @@ app.get('/api/me', wrap(async (req, res) => {
         }
         const tenantDB = await connectToTenantDB(viewer.tenantId);
         try {
-            const p = await retrievePlayer(tenantDB, viewer.playerId);
+            const p = await retrievePlayer(tenantDB, viewer.playerId, ['id', 'display_name', 'is_disqualified']);
             if (!p) {
                 const data = {
                     tenant: td,
