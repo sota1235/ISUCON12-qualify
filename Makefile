@@ -91,8 +91,8 @@ deploy: deploy_db_settings ## Deploy all
 .PHONY: deploy_remote
 deploy_remote: ## remoteで実行する
 	cd $(HOME)/$(WEB_APP_DIR)
-	sh $(HOME)/.bashrc && npm i
-	sh $(HOME)/.bashrc && npm run build
+	export PATH=/home/isucon/.nvm/versions/node/v18.6.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin && npm i
+	export PATH=/home/isucon/.nvm/versions/node/v18.6.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin && npm run build
 	sudo systemctl daemon-reload
 	sudo systemctl restart $(SERVICE_NAME)
 	sudo systemctl restart nginx
