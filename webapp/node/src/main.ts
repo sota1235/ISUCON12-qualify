@@ -1222,7 +1222,7 @@ app.get(
           '       t2.score as score\n' +
           'FROM competition as t1\n' +
           '         left join player_score t2 on t1.tenant_id = t2.tenant_id and t1.id = t2.competition_id\n' +
-          'WHERE tenant_id = ?\n' +
+          'WHERE t1.tenant_id = ?\n' +
           '  and t2.player_id = ?\n' +
           'ORDER BY created_at ASC\n',
           [viewer.tenantId, p.id]
