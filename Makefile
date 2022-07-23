@@ -144,6 +144,6 @@ help: ## Print this help
 
 .PHONY: dump
 dump:
-    mysqldump -uisucon -pisucon isuports competition > initial_data/0_competition.sql
-    mysqldump -uisucon -pisucon isuports player > initial_data/0_player.sql
-    mysqldump -uisucon -pisucon isuports player_score > initial_data/0_player_score.sql
+	mysqldump -uisucon -pisucon isuports competition > initial_data/0_competition.sql
+ 	mysqldump -uisucon -pisucon isuports player > initial_data/0_player.sql
+ 	mysqldump -uisucon -pisucon isuports player_score > initial_data/0_player_score.sql

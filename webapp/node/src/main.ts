@@ -1555,6 +1555,13 @@ async function moveToMysqlFromSqlite() {
   }
 }
 
+app.post(
+    '/initialize_data',
+    wrap(async (req: Request, res: Response, _next: NextFunction) => {
+      await moveToMysqlFromSqlite()
+    })
+)
+
 // ベンチマーカー向けAPI
 // POST /initialize
 // ベンチマーカーが起動したときに最初に呼ぶ
@@ -1564,7 +1571,6 @@ app.post(
   wrap(async (req: Request, res: Response, _next: NextFunction) => {
     try {
       await exec(initializeScript)
-      await moveToMysqlFromSqlite()
 
       const data: InitializeResult = {
         lang: 'node',
