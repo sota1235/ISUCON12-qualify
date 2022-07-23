@@ -80,6 +80,7 @@ deploy: deploy_db_settings ## Deploy all
 	ssh $(SSH_NAME) "cd $(HOME) && git checkout $(GIT_BRANCH)"
 	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && npm i && npm run build"
 	ssh $(SSH_NAME) "sudo systemctl restart $(SERVICE_NAME)"
+	ssh $(SSH_NAME) "sudo systemctl restart nginx"
 
 .PHONY: deploy_db_settings
 deploy_db_settings: ## Deploy /etc configs
