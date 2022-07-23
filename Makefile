@@ -5,7 +5,8 @@ GIT_BRANCH=main
 # 競技に合わせて書き換える
 HOME=/home/isucon
 SSH_NAME=isu1
-WEB_APP_DIR=webapp/node # server上のhomeディレクトリから辿ったアプリのディレクトリ
+# server上のhomeディレクトリから辿ったアプリのディレクトリ
+WEB_APP_DIR=webapp/node
 SERVICE_NAME="isuports.service" # systemctlで管理されているサービス名を設定
 # MySQL
 MYSQL_SLOW_QUERY_LOG=/var/log/mysql/mariadb-slow.log
@@ -82,9 +83,9 @@ deploy: ## Deploy all
 	## WebApp Deployment
 	# cd webapp/node && npm i && cd ../..
 	# npm run --prefix webapp/node build
-	rsync -av ./webapp/node/build $(SSH_NAME):$(HOME)/webapp/node
-	ssh $(SSH_NAME) "cd $(HOME) && git pull && git merge origin/main"
-	ssh $(SSH_NAME) "cd $(HOME) && git checkout $(GIT_BRANCH)"
+	# rsync -av ./webapp/node/build $(SSH_NAME):$(HOME)/webapp/node
+	ssh $(SSH_NAME) "cd $(HOME) && git fetch --prune"
+	ssh $(SSH_NAME) "cd $(HOME) && git checkout $(GIT_BRANCH) && git merge origin/$(GIT_BRANCH)"
 	ssh $(SSH_NAME) "cd $(HOME) && make deploy_remote"
 	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && $(NPM) i"
 	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && $(NPM) run build"
@@ -98,6 +99,7 @@ deploy: ## Deploy all
 deploy_remote: ## remoteで実行する
 	# $(EXPORT_PATH) && cd $(HOME)/$(WEB_APP_DIR) && npm i
 	# $(EXPORT_PATH) && cd $(HOME)/$(WEB_APP_DIR) && npm run build
+	cp $(HOME)/$(WEB_APP_DIR)/env_$(SSH_NAME) $(HOME)/$(WEB_APP_DIR)/env
 	sudo systemctl daemon-reload
 	sudo systemctl restart $(SERVICE_NAME)
 	sudo systemctl restart nginx
