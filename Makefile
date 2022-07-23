@@ -82,8 +82,8 @@ deploy: deploy_db_settings ## Deploy all
 	## WebApp Deployment
 	# cd webapp/node && npm i && cd ../..
 	# npm run --prefix webapp/node build
-	rsync -av ./webapp/node/node_modules $(SSH_NAME):$(HOMDE)/webapp/node
-	rsync -av ./webapp/node/build $(SSH_NAME):$(HOMDE)/webapp/node
+	rsync -av ./webapp/node/node_modules $(SSH_NAME):$(HOME)/webapp/node
+	rsync -av ./webapp/node/build $(SSH_NAME):$(HOME)/webapp/node
 	ssh $(SSH_NAME) "cd $(HOME) && git pull && git merge origin/main"
 	ssh $(SSH_NAME) "cd $(HOME) && git checkout $(GIT_BRANCH)"
 	ssh $(SSH_NAME) "cd $(HOME) && make deploy_remote"
