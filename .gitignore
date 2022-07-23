@@ -17,4 +17,4 @@ tmp/
 request_data
 newrelic_agent.log
 # TODO 後でcommit
-initial_data/*
+initial_data/*.db
