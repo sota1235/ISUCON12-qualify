@@ -89,9 +89,12 @@ deploy_db_settings: ## Deploy /etc configs
 	# ssh $(SSH_NAME) "sudo systemctl restart postgresql-*"
 
 # Util
-.PHONY: health_check
-health_check: ## 各サービスの状態をチェック
+.PHONY: maintenance
+maintenance: ## メンテナンスコマンド
 	ssh $(SSH_NAME) "sudo /opt/isucon-env-checker/isucon-env-checker" # メンテナンスコマンド
+
+.PHONY: health_check
+health_check: maintenance ## 各サービスの状態をチェック
 	ssh $(SSH_NAME) "sudo systemctl status $(SERVICE_NAME)"
 	ssh $(SSH_NAME) "sudo systemctl status nginx"
 	ssh $(SSH_NAME) "sudo systemctl status mysql"
@@ -107,10 +110,10 @@ bench_pre: ## ベンチマーク実行前の処理
 	ssh $(SSH_NAME) "sudo systemctl restart nginx"
 	ssh $(SSH_NAME) "sudo chmod 777 /var/log/nginx /var/log/nginx/*"
 	# mysqlのslow queryのsnapshotを作成
-	ssh $(SSH_NAME) "if [ -f $(MYSQL_SLOW_QUERY_LOG) ]; then sudo mv $(MYSQL_SLOW_QUERY_LOG) $(MYSQL_SLOW_QUERY_LOG).`date +%Y%m%d-%H%M%S`; fi"
-	ssh $(SSH_NAME) "sudo systemctl restart mysql"
+	# ssh $(SSH_NAME) "if [ -f $(MYSQL_SLOW_QUERY_LOG) ]; then sudo mv $(MYSQL_SLOW_QUERY_LOG) $(MYSQL_SLOW_QUERY_LOG).`date +%Y%m%d-%H%M%S`; fi"
+	# ssh $(SSH_NAME) "sudo systemctl restart mysql"
 	# mysql slow queryを有効化
-	ssh $(SSH_NAME) "sudo mysql -u$(MYSQL_USER) -p$(MYSQL_PASS) $(MYSQL_DB) < $(HOME)/tools/mysql/set_slow_query.sql"
+	# ssh $(SSH_NAME) "sudo mysql -u$(MYSQL_USER) -p$(MYSQL_PASS) $(MYSQL_DB) < $(HOME)/tools/mysql/set_slow_query.sql"
 
 .PHONY: bench_run
 bench_run: ## ベンチマークの実行
@@ -121,13 +124,13 @@ bench_post: ## ベンチマーク実行後の処理
 	# Kataribeの解析結果をSlackに投稿
 	ssh $(SSH_NAME) "cat /var/log/nginx/access.log | $(KATARIBE_COMMAND) | $(NOTIFY_SLACK_COMMAND) -filename 'アクセスログ解析結果 by kataribe'"
 	# pt-query-digest解析結果をSlackに投稿
-	ssh $(SSH_NAME) "sudo chmod 777 /tmp/slow.log"
-	ssh $(SSH_NAME) "pt-query-digest /tmp/slow.log > /tmp/digest.txt"
-	ssh $(SSH_NAME) "cat /tmp/digest.txt | $(NOTIFY_SLACK_COMMAND) -filename 'SQL解析結果 by pt-query-digest'"
-	ssh $(SSH_NAME) "sudo systemctl restart mariadb.service"
+	# ssh $(SSH_NAME) "sudo chmod 777 /tmp/slow.log"
+	# ssh $(SSH_NAME) "pt-query-digest /tmp/slow.log > /tmp/digest.txt"
+	# ssh $(SSH_NAME) "cat /tmp/digest.txt | $(NOTIFY_SLACK_COMMAND) -filename 'SQL解析結果 by pt-query-digest'"
+	# ssh $(SSH_NAME) "sudo systemctl restart mysql.service"
 
 .PHONY: for_end
-for_end: ## 終了前の掃除
+for_end: maintenance ## 終了前の掃除
 	# netdataの終了
 	ssh $(SSH_NAME) "sudo systemctl stop netdata"
 	ssh $(SSH_NAME) "sudo systemctl disable netdata"
