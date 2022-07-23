@@ -78,7 +78,7 @@ setup-git: ## Gitの設定
 
 # Deploy
 .PHONY: deploy
-deploy: deploy_db_settings ## Deploy all
+deploy: ## Deploy all
 	## WebApp Deployment
 	# cd webapp/node && npm i && cd ../..
 	# npm run --prefix webapp/node build
@@ -91,6 +91,8 @@ deploy: deploy_db_settings ## Deploy all
 	# ssh $(SSH_NAME) "sudo systemctl daemon-reload"
 	# ssh $(SSH_NAME) "sudo systemctl restart $(SERVICE_NAME)"
 	# ssh $(SSH_NAME) "sudo systemctl restart nginx"
+	# MySQL
+	ssh $(SSH_NAME) "sudo cp $(HOME)/etc/mysql/conf.d/mysqld.cnf /etc/mysql/conf.d"
 
 .PHONY: deploy_remote
 deploy_remote: ## remoteで実行する
@@ -99,12 +101,9 @@ deploy_remote: ## remoteで実行する
 	sudo systemctl daemon-reload
 	sudo systemctl restart $(SERVICE_NAME)
 	sudo systemctl restart nginx
-
-.PHONY: deploy_db_settings
-deploy_db_settings: ## Deploy /etc configs
-	ssh $(SSH_NAME) "sudo systemctl restart mysql"
-	# ssh $(SSH_NAME) "sudo systemctl restart mariadb"
-	# ssh $(SSH_NAME) "sudo systemctl restart postgresql-*"
+	# MySQL
+	sudo cp $(HOME)/etc/mysql/conf.d/mysqld.cnf /etc/mysql/conf.d
+	sudo systemctl restart mysql
 
 # Util
 .PHONY: maintenance
