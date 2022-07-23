@@ -97,6 +97,21 @@ const redisClient = createClient({
   url: 'redis://192.168.0.13:6379', // isu3
 });
 
+async function getFromCache<T>(key: string, func: () => Promise<T>): Promise<T> {
+  if (!await redisClient.exists(key)) {
+    // @ts-ignore
+    return JSON.parse(await redisClient.get(key) as T);
+  }
+
+  const result = await func();
+  await redisClient.set(key, JSON.stringify(result));
+  return result;
+}
+
+async function clearCache(key: string): Promise<void> {
+  await redisClient.del(key);
+}
+
 // システム全体で一意なIDを生成する
 async function dispenseID(): Promise<string> {
   return Math.random().toString(32).substring(2);
