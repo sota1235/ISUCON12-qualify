@@ -29,7 +29,8 @@ CREATE TABLE `player` (
   `is_disqualified` tinyint(1) NOT NULL,
   `created_at` bigint NOT NULL,
   `updated_at` bigint NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `key1` (`tenant_id`, `created_at` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
