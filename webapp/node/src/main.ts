@@ -1,4 +1,3 @@
-require('newrelic');
 import express, { Request, Response, NextFunction, RequestHandler } from 'express'
 import cookieParser from 'cookie-parser'
 import bodyParser from 'body-parser'
