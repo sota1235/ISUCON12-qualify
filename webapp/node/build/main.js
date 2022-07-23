@@ -89,7 +89,8 @@ const redisClient = (0, client_1.createClient)({
     url: 'redis://192.168.0.13:6379', // isu3
 });
 async function getFromCache(key, func) {
-    if (!await redisClient.exists(key)) {
+    console.log(`redis key: ${key}`);
+    if (await redisClient.exists(key)) {
         // @ts-ignore
         return JSON.parse(await redisClient.get(key));
     }
