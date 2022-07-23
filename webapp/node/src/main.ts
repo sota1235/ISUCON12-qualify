@@ -1516,6 +1516,24 @@ app.get(
   })
 )
 
+async function moveToMysqlFromSqlite() {
+  for (let i = 1; i <= 100; i++) {
+    const tenantDB = await connectToTenantDB(i)
+    const competitions = await tenantDB.all<CompetitionRow[]>(
+        'SELECT * FROM competition'
+    )
+
+    const promises = []
+    for (const c of competitions) {
+      promises.push(adminDB.query(
+          'INSERT INTO competition (id, tenant_id, title, finished_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+          [c['id'], c['tenant_id'], c['title'], c['finished_at'], c['created_at'], c['updated_at']],
+      ))
+    }
+    await Promise.all(promises)
+  }
+}
+
 // ベンチマーカー向けAPI
 // POST /initialize
 // ベンチマーカーが起動したときに最初に呼ぶ
@@ -1525,6 +1543,7 @@ app.post(
   wrap(async (req: Request, res: Response, _next: NextFunction) => {
     try {
       await exec(initializeScript)
+      await moveToMysqlFromSqlite()
 
       const data: InitializeResult = {
         lang: 'node',
