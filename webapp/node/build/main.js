@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 require('newrelic');
-const client_1 = require("@redis/client");
+const ioredis_1 = __importDefault(require("ioredis"));
 const express_1 = __importDefault(require("express"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const body_parser_1 = __importDefault(require("body-parser"));
@@ -85,10 +85,8 @@ async function createTenantDB(id) {
     }
 }
 // Redis client
-const redisClient = (0, client_1.createClient)({
-    socket: {
-        host: '192.168.0.13',
-    }, // isu3
+const redisClient = new ioredis_1.default({
+    host: '192.168.0.13', // isu3
 });
 async function getFromCache(key, func) {
     console.log(`redis key: ${key}`);

@@ -1,5 +1,5 @@
 require('newrelic');
-import { createClient } from '@redis/client';
+import Redis from 'ioredis';
 import express, { Request, Response, NextFunction, RequestHandler } from 'express'
 import cookieParser from 'cookie-parser'
 import bodyParser from 'body-parser'
@@ -93,10 +93,8 @@ async function createTenantDB(id: number): Promise<Error | undefined> {
 }
 
 // Redis client
-const redisClient = createClient({
-  socket: {
-    host: '192.168.0.13',
-  }, // isu3
+const redisClient = new Redis({
+  host: '192.168.0.13', // isu3
 });
 
 async function getFromCache<T>(key: string, func: () => Promise<T>): Promise<T> {
