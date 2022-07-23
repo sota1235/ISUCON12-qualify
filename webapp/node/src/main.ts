@@ -1542,7 +1542,20 @@ async function moveToMysqlFromSqlite() {
     }
 
     const playerScores = await tenantDB.all<PlayerScoreRow[]>(
-        'SELECT * FROM player_score'
+        'select id,\n' +
+        '       t1.tenant_id,\n' +
+        '       t1.competition_id,\n' +
+        '       t1.player_id,\n' +
+        '       score,\n' +
+        '       row_num,\n' +
+        '       created_at,\n' +
+        '       updated_at\n' +
+        'from player_score as t1\n' +
+        '         join (select tenant_id, competition_id, player_id, max(row_num) as max_row_num\n' +
+        '               from player_score as t2\n' +
+        '               group by tenant_id, competition_id, player_id) as t3\n' +
+        '              on t1.tenant_id = t3.tenant_id and t1.competition_id = t3.competition_id and\n' +
+        '                 t1.player_id = t3.player_id and t1.row_num = t3.max_row_num'
     )
     for (const ps of playerScores) {
       promises.push(adminDB.query(
