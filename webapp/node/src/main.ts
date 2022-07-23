@@ -378,7 +378,7 @@ async function retrieveTenantRowFromHeader(req: Request): Promise<TenantRow | un
 async function retrievePlayer(tenantDB: Database, id: string, columns: string[] = ['*']): Promise<PlayerRow | undefined> {
   try {
     const selectRow = columns.join(',');
-    const playerRow = await tenantDB.get<PlayerRow>(`SELECT ${selectRow} FROM player WHERE id = ?`, id)
+    const [[playerRow]] = await adminDB.query<(PlayerRow & RowDataPacket)[]>(`SELECT ${selectRow} FROM player WHERE id = ?`, id)
     return playerRow
   } catch (error) {
     throw new Error(`error Select player: id=${id}, ${error}`)
@@ -405,7 +405,10 @@ async function authorizePlayer(tenantDB: Database, id: string): Promise<Error | 
 // 大会を取得する
 async function retrieveCompetition(tenantDB: Database, id: string): Promise<CompetitionRow | undefined> {
   try {
-    const competitionRow = await tenantDB.get<CompetitionRow>('SELECT * FROM competition WHERE id = ?', id)
+    const [[competitionRow]] = await adminDB.query<(CompetitionRow & RowDataPacket)[]>(
+        'SELECT * FROM competition WHERE id = ?',
+        [id]
+    )
     return competitionRow
   } catch (error) {
     throw new Error(`error Select competition: id=${id}, ${error}`)
@@ -545,10 +548,9 @@ async function billingReportByCompetition(
   const unlock = await flockByTenantID(tenantId)
   try {
     // スコアを登録した参加者のIDを取得する
-    const scoredPlayerIds = await tenantDB.all<{ player_id: string }[]>(
-      'SELECT DISTINCT(player_id) FROM player_score WHERE tenant_id = ? AND competition_id = ?',
-      tenantId,
-      comp.id
+    const [scoredPlayerIds] = await adminDB.query<(string & RowDataPacket)[]>(
+        'SELECT DISTINCT(player_id) FROM player_score WHERE tenant_id = ? AND competition_id = ?',
+        [tenantId, comp.id]
     )
     for (const pid of scoredPlayerIds) {
       // スコアが登録されている参加者
@@ -641,9 +643,9 @@ app.get(
 
         const tenantDB = await connectToTenantDB(tenant.id)
         try {
-          const competitions = await tenantDB.all<CompetitionRow[]>(
-            'SELECT * FROM competition WHERE tenant_id = ?',
-            tenant.id
+          const [competitions] = await adminDB.query<(CompetitionRow & RowDataPacket)[]>(
+              'SELECT * FROM competition WHERE tenant_id = ?',
+              [tenant.id]
           )
 
           for (const comp of competitions) {
@@ -692,9 +694,9 @@ app.get(
       const pds: PlayerDetail[] = []
       const tenantDB = await connectToTenantDB(viewer.tenantId)
       try {
-        const pls = await tenantDB.all<PlayerRow[]>(
-          'SELECT * FROM player WHERE tenant_id = ? ORDER BY created_at DESC',
-          viewer.tenantId
+        const [pls] = await adminDB.query<(PlayerRow & RowDataPacket)[]>(
+            'SELECT * FROM player WHERE tenant_id = ? ORDER BY created_at DESC',
+            [viewer.tenantId]
         )
 
         pds.push(
@@ -745,14 +747,14 @@ app.post(
           const now = Math.floor(new Date().getTime() / 1000)
 
           try {
-            await tenantDB.run(
-              'INSERT INTO player (id, tenant_id, display_name, is_disqualified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-              id,
-              viewer.tenantId,
-              displayName,
-              false,
-              now,
-              now
+            await adminDB.query(
+                'INSERT INTO player (id, tenant_id, display_name, is_disqualified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+                [id,
+                  viewer.tenantId,
+                  displayName,
+                  false,
+                  now,
+                  now]
             )
           } catch (error) {
             throw new Error(
@@ -813,7 +815,10 @@ app.post(
       const tenantDB = await connectToTenantDB(viewer.tenantId)
       try {
         try {
-          await tenantDB.run('UPDATE player SET is_disqualified = ?, updated_at = ? WHERE id = ?', true, now, playerId)
+          await adminDB.query(
+              'UPDATE player SET is_disqualified = ?, updated_at = ? WHERE id = ?',
+              [true, now, playerId]
+          )
         } catch (error) {
           throw new Error(`error Update player: isDisqualified=true, updatedAt=${now}, id=${playerId}, ${error}`)
         }
@@ -872,14 +877,14 @@ app.post(
       const id = await dispenseID()
       const tenantDB = await connectToTenantDB(viewer.tenantId)
       try {
-        await tenantDB.run(
-          'INSERT INTO competition (id, tenant_id, title, finished_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-          id,
-          viewer.tenantId,
-          title,
-          null,
-          now,
-          now
+        await adminDB.query(
+            'INSERT INTO competition (id, tenant_id, title, finished_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [id,
+              viewer.tenantId,
+              title,
+              null,
+              now,
+              now]
         )
       } catch (error) {
         throw new Error(
@@ -935,11 +940,11 @@ app.post(
           throw new ErrorWithStatus(404, 'competition not found')
         }
 
-        await tenantDB.run(
-          'UPDATE competition SET finished_at = ?, updated_at = ? WHERE id = ?',
-          now,
-          now,
-          competitionId
+        await adminDB.query(
+            'UPDATE competition SET finished_at = ?, updated_at = ? WHERE id = ?',
+            [now,
+              now,
+              competitionId]
         )
       } finally {
         tenantDB.close()
@@ -1048,25 +1053,26 @@ app.post(
             })
           }
 
-          await tenantDB.run(
-            'DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?',
-            viewer.tenantId,
-            competitionId
+          await adminDB.query(
+              'DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?',
+              [viewer.tenantId,
+                competitionId]
           )
 
           for (const row of playerScoreRows) {
-            await tenantDB.run(
-              'INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES ($id, $tenant_id, $player_id, $competition_id, $score, $row_num, $created_at, $updated_at)',
-              {
-                $id: row.id,
-                $tenant_id: row.tenant_id,
-                $player_id: row.player_id,
-                $competition_id: row.competition_id,
-                $score: row.score,
-                $row_num: row.row_num,
-                $created_at: row.created_at,
-                $updated_at: row.updated_at,
-              }
+            // todo: これで動くのか確認
+            await adminDB.query(
+                'INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES ($id, $tenant_id, $player_id, $competition_id, $score, $row_num, $created_at, $updated_at)',
+                {
+                  $id: row.id,
+                  $tenant_id: row.tenant_id,
+                  $player_id: row.player_id,
+                  $competition_id: row.competition_id,
+                  $score: row.score,
+                  $row_num: row.row_num,
+                  $created_at: row.created_at,
+                  $updated_at: row.updated_at,
+                }
             )
           }
         } finally {
@@ -1113,9 +1119,9 @@ app.get(
       const reports: BillingReport[] = []
       const tenantDB = await connectToTenantDB(viewer.tenantId)
       try {
-        const competitions = await tenantDB.all<CompetitionRow[]>(
-          'SELECT * FROM competition WHERE tenant_id=? ORDER BY created_at DESC',
-          viewer.tenantId
+        const [competitions] = await adminDB.query<(CompetitionRow & RowDataPacket)[]>(
+            'SELECT * FROM competition WHERE tenant_id=? ORDER BY created_at DESC',
+            [viewer.tenantId]
         )
 
         for (const comp of competitions) {
@@ -1144,9 +1150,9 @@ app.get(
 
 async function competitionsHandler(req: Request, res: Response, viewer: Viewer, tenantDB: Database) {
   try {
-    const competitions = await tenantDB.all<CompetitionRow[]>(
-      'SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at DESC',
-      viewer.tenantId
+    const [competitions] = await adminDB.query<(CompetitionRow & RowDataPacket)[]>(
+        'SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at DESC',
+        [viewer.tenantId]
     )
 
     const cds: CompetitionDetail[] = competitions.map((comp) => ({
@@ -1233,7 +1239,10 @@ app.get(
           is_disqualified: !!p.is_disqualified,
         }
 
-        const competitions = await tenantDB.all<CompetitionRow[]>('SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC', viewer.tenantId)
+        const [competitions] = await adminDB.query<(CompetitionRow & RowDataPacket)[]>(
+            'SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC',
+            [viewer.tenantId]
+        )
 
         const pss: PlayerScoreRow[] = []
 
@@ -1241,12 +1250,13 @@ app.get(
         const unlock = await flockByTenantID(viewer.tenantId)
         try {
           for (const comp of competitions) {
-            const ps = await tenantDB.get<PlayerScoreRow>(
-              // 最後にCSVに登場したスコアを採用する = row_numが一番大きいもの
-              'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1',
-              viewer.tenantId,
-              comp.id,
-              p.id
+            // 最後にCSVに登場したスコアを採用する = row_numが一番大きいもの
+            // todo: Order by 不要かも
+            const [[ps]] = await adminDB.query<(PlayerScoreRow & RowDataPacket)[]>(
+                'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1',
+                [viewer.tenantId,
+                  comp.id,
+                  p.id]
             )
             if (!ps) {
               // 行がない = スコアが記録されてない
@@ -1349,10 +1359,10 @@ app.get(
         // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
         const unlock = await flockByTenantID(tenant.id)
         try {
-          const pss = await tenantDB.all<PlayerScoreRow[]>(
-            'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? ORDER BY row_num DESC',
-            tenant.id,
-            competition.id
+          const [pss] = await adminDB.query<(PlayerScoreRow & RowDataPacket)[]>(
+              'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? ORDER BY row_num DESC',
+              [tenant.id,
+                competition.id]
           )
 
           const scoredPlayerSet: { [player_id: string]: number } = {}
