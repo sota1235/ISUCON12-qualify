@@ -3,3 +3,4 @@ ISUCON_DB_PORT=3306
 ISUCON_DB_USER=isucon
 ISUCON_DB_PASSWORD=isucon
 ISUCON_DB_NAME=isuports
+PATH=/home/isucon/.nvm/versions/node/v18.6.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
