@@ -98,7 +98,7 @@ const redisClient = createClient({
 });
 
 async function getFromCache<T>(key: string, func: () => Promise<T>): Promise<T> {
-  if (!await redisClient.exists(key)) {
+  if (await redisClient.exists(key)) {
     // @ts-ignore
     return JSON.parse(await redisClient.get(key) as T);
   }
