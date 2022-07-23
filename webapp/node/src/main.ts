@@ -93,6 +93,8 @@ async function createTenantDB(id: number): Promise<Error | undefined> {
 
 // システム全体で一意なIDを生成する
 async function dispenseID(): Promise<string> {
+  return Math.random().toString(32).substring(2);
+  /**
   let id = 0
   let lastErr: any
   for (const _ of Array(100)) {
@@ -113,6 +115,7 @@ async function dispenseID(): Promise<string> {
   }
 
   throw new Error(`error REPLACE INTO id_generator: ${lastErr.toString()}`)
+   */
 }
 
 // カスタムエラーハンドラにステータスコード拾ってもらうエラー型
@@ -384,9 +387,10 @@ async function retrieveTenantRowFromHeader(req: Request): Promise<TenantRow | un
 }
 
 // 参加者を取得する
-async function retrievePlayer(tenantDB: Database, id: string): Promise<PlayerRow | undefined> {
+async function retrievePlayer(tenantDB: Database, id: string, columns: string[] = ['*']): Promise<PlayerRow | undefined> {
   try {
-    const playerRow = await tenantDB.get<PlayerRow>('SELECT * FROM player WHERE id = ?', id)
+    const selectRow = columns.join(',');
+    const playerRow = await tenantDB.get<PlayerRow>(`SELECT ${selectRow} FROM player WHERE id = ?`, id)
     return playerRow
   } catch (error) {
     throw new Error(`error Select player: id=${id}, ${error}`)
@@ -397,7 +401,7 @@ async function retrievePlayer(tenantDB: Database, id: string): Promise<PlayerRow
 // 参加者向けAPIで呼ばれる
 async function authorizePlayer(tenantDB: Database, id: string): Promise<Error | undefined> {
   try {
-    const player = await retrievePlayer(tenantDB, id)
+    const player = await retrievePlayer(tenantDB, id, ['is_disqualified'])
     if (!player) {
       throw new ErrorWithStatus(401, 'player not found')
     }
@@ -544,7 +548,7 @@ async function billingReportByCompetition(
 
   // ランキングにアクセスした参加者のIDを取得する
   const [vhs] = await adminDB.query<(VisitHistorySummaryRow & RowDataPacket)[]>(
-    'SELECT player_id, MIN(created_at) AS min_created_at FROM visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id',
+    'SELECT player_id, created_at AS min_created_at FROM first_visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id',
     [tenantId, comp.id]
   )
 
@@ -776,7 +780,7 @@ app.post(
             )
           }
 
-          const player = await retrievePlayer(tenantDB, id)
+          const player = await retrievePlayer(tenantDB, id, ['id', 'display_name', 'is_disqualified'])
           if (!player) {
             throw new Error('error retrievePlayer id=${id}')
           }
@@ -834,7 +838,7 @@ app.post(
           throw new Error(`error Update player: isDisqualified=true, updatedAt=${now}, id=${playerId}, ${error}`)
         }
 
-        const player = await retrievePlayer(tenantDB, playerId)
+        const player = await retrievePlayer(tenantDB, playerId, ['id', 'display_name', 'is_disqualified'])
         if (!player) {
           // 存在しないプレイヤー
           throw new ErrorWithStatus(404, 'player not found')
@@ -1038,7 +1042,7 @@ app.post(
             }
 
             const { player_id, score: scoreStr } = record
-            const p = await retrievePlayer(tenantDB, player_id)
+            const p = await retrievePlayer(tenantDB, player_id, ['id'])
             if (!p) {
               // 存在しない参加者が含まれている
               throw new ErrorWithStatus(400, `player not found: ${player_id}`)
@@ -1239,7 +1243,7 @@ app.get(
           throw error
         }
 
-        const p = await retrievePlayer(tenantDB, playerId)
+        const p = await retrievePlayer(tenantDB, playerId, ['id', 'display_name', 'is_disqualified'])
         if (!p) {
           throw new ErrorWithStatus(404, 'player not found')
         }
@@ -1347,10 +1351,14 @@ app.get(
           viewer.tenantId,
         ])
 
-        await adminDB.execute<OkPacket>(
-          'INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-          [viewer.playerId, tenant.id, competitionId, now, now]
-        )
+        try {
+          await adminDB.execute<OkPacket>(
+            'INSERT INTO first_visit_history (player_id, tenant_id, competition_id, created_at) VALUES (?, ?, ?, ?)',
+            [viewer.playerId, tenant.id, competitionId, now]
+          )
+        } catch (err) {
+          // TODO: catch duplicate error
+        }
 
         const { rank_after: rankAfterStr } = req.query
         let rankAfter: number
@@ -1376,7 +1384,7 @@ app.get(
               continue
             }
             scoredPlayerSet[ps.player_id] = 1
-            const p = await retrievePlayer(tenantDB, ps.player_id)
+            const p = await retrievePlayer(tenantDB, ps.player_id, ['id', 'display_name'])
             if (!p) {
               throw new Error('error retrievePlayer')
             }
@@ -1496,7 +1504,7 @@ app.get(
 
       const tenantDB = await connectToTenantDB(viewer.tenantId)
       try {
-        const p = await retrievePlayer(tenantDB, viewer.playerId)
+        const p = await retrievePlayer(tenantDB, viewer.playerId, ['id', 'display_name', 'is_disqualified'])
         if (!p) {
           const data: MeResult = {
             tenant: td,
