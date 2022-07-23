@@ -83,7 +83,6 @@ deploy: deploy_db_settings ## Deploy all
 
 .PHONY: deploy_db_settings
 deploy_db_settings: ## Deploy /etc configs
-	# TODO git pull and copy files
 	ssh $(SSH_NAME) "sudo systemctl restart mysql"
 	# ssh $(SSH_NAME) "sudo systemctl restart mariadb"
 	# ssh $(SSH_NAME) "sudo systemctl restart postgresql-*"
@@ -95,6 +94,7 @@ health_check: ## 各サービスの状態をチェック
 	ssh $(SSH_NAME) "sudo systemctl status $(SERVICE_NAME)"
 	ssh $(SSH_NAME) "sudo systemctl status nginx"
 	ssh $(SSH_NAME) "sudo systemctl status mysql"
+	ssh $(SSH_NAME) "sudo systemctl status redis-server"
 	# ssh $(SSH_NAME) "sudo systemctl status mariadb"
 	# ssh $(SSH_NAME) "sudo systemctl status postgresql-*"
 
