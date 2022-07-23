@@ -12,5 +12,7 @@ tmp/
 .mysql_history
 .sqlite_history
 .wget-hsts
+request_data
+newrelic_agent.log
 # TODO 後でcommit
 initial_data/*
