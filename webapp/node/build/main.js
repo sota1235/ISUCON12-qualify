@@ -884,24 +884,17 @@ app.get('/api/player/player/:playerId', wrap(async (req, res) => {
             display_name: p.display_name,
             is_disqualified: !!p.is_disqualified,
         };
-        const [competitions] = await adminDB.query('SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC', [viewer.tenantId]);
-        const pss = [];
+        const [competitionScores] = await adminDB.query('SELECT t1.id    as competition_id,\n' +
+            '       t2.score as score\n' +
+            'FROM competition as t1\n' +
+            '         left join player_score t2 on t1.tenant_id = t2.tenant_id and t1.id = t2.competition_id\n' +
+            'WHERE t1.tenant_id = ?\n' +
+            '  and t2.player_id = ?\n' +
+            'ORDER BY created_at ASC\n', [viewer.tenantId, p.id]);
         // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
         const unlock = await flockByTenantID(viewer.tenantId);
         try {
-            for (const comp of competitions) {
-                // 最後にCSVに登場したスコアを採用する = row_numが一番大きいもの
-                // todo: Order by 不要かも
-                const [[ps]] = await adminDB.query('SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1', [viewer.tenantId,
-                    comp.id,
-                    p.id]);
-                if (!ps) {
-                    // 行がない = スコアが記録されてない
-                    continue;
-                }
-                pss.push(ps);
-            }
-            for (const ps of pss) {
+            for (const ps of competitionScores) {
                 const comp = await retrieveCompetition(ps.competition_id);
                 if (!comp) {
                     throw new Error('error retrieveCompetition');
