@@ -86,7 +86,9 @@ async function createTenantDB(id) {
 }
 // Redis client
 const redisClient = (0, client_1.createClient)({
-    url: 'redis://192.168.0.13:6379', // isu3
+    socket: {
+        host: '192.168.0.13',
+    }, // isu3
 });
 async function getFromCache(key, func) {
     console.log(`redis key: ${key}`);

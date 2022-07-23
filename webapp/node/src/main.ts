@@ -94,7 +94,9 @@ async function createTenantDB(id: number): Promise<Error | undefined> {
 
 // Redis client
 const redisClient = createClient({
-  url: 'redis://192.168.0.13:6379', // isu3
+  socket: {
+    host: '192.168.0.13',
+  }, // isu3
 });
 
 async function getFromCache<T>(key: string, func: () => Promise<T>): Promise<T> {
