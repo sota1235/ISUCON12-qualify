@@ -1,0 +1,12 @@
+[user]
+	name = isu1
+	email = isu1@example.com
+[alias]
+	l = log
+	st = status
+	ci = commit
+	ic = commit
+	b = branch
+	fp = fetch --prune
+	pom = push origin main
+	poc = push origin HEAD
