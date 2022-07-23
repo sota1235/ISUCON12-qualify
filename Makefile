@@ -84,8 +84,8 @@ deploy: ## Deploy all
 	# cd webapp/node && npm i && cd ../..
 	# npm run --prefix webapp/node build
 	# rsync -av ./webapp/node/build $(SSH_NAME):$(HOME)/webapp/node
-	ssh $(SSH_NAME) "cd $(HOME) && git pull && git merge origin/main"
-	ssh $(SSH_NAME) "cd $(HOME) && git checkout $(GIT_BRANCH)"
+	ssh $(SSH_NAME) "cd $(HOME) && git pull"
+	ssh $(SSH_NAME) "cd $(HOME) && git checkout $(GIT_BRANCH) && git merge origin/$(GIT_BRANCH)"
 	ssh $(SSH_NAME) "cd $(HOME) && make deploy_remote"
 	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && $(NPM) i"
 	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && $(NPM) run build"
