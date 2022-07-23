@@ -98,6 +98,7 @@ deploy: ## Deploy all
 deploy_remote: ## remoteで実行する
 	# $(EXPORT_PATH) && cd $(HOME)/$(WEB_APP_DIR) && npm i
 	# $(EXPORT_PATH) && cd $(HOME)/$(WEB_APP_DIR) && npm run build
+	cp $(HOME)/$(WEB_APP_DIR)/env_$(SSH_NAME) $(HOME)/$(WEB_APP_DIR)/env
 	sudo systemctl daemon-reload
 	sudo systemctl restart $(SERVICE_NAME)
 	sudo systemctl restart nginx
