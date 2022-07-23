@@ -10,7 +10,7 @@ CREATE TABLE `competition` (
   `title` TEXT NOT NULL,
   `finished_at` BIGINT NULL,
   `created_at` BIGINT NOT NULL,
-  `updated_at` BIGINT NOT NULL,
+  `updated_at` BIGINT NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
 CREATE TABLE `player` (
