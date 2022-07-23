@@ -94,6 +94,7 @@ async function getFromCache(key, func) {
         // @ts-ignore
         return JSON.parse(await redisClient.get(key));
     }
+    console.log(`redis key not exists: ${key}`);
     const result = await func();
     await redisClient.set(key, JSON.stringify(result));
     return result;

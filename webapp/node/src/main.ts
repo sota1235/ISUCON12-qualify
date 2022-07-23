@@ -100,10 +100,12 @@ const redisClient = createClient({
 async function getFromCache<T>(key: string, func: () => Promise<T>): Promise<T> {
   console.log(`redis key: ${key}`)
   if (await redisClient.exists(key)) {
+
     // @ts-ignore
     return JSON.parse(await redisClient.get(key) as T);
   }
 
+  console.log(`redis key not exists: ${key}`)
   const result = await func();
   await redisClient.set(key, JSON.stringify(result));
   return result;
