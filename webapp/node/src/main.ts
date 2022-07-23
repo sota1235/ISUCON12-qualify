@@ -16,6 +16,8 @@ import fsExt from 'fs-ext'
 import { parse } from 'csv-parse/sync'
 
 import { useSqliteTraceHook } from './sqltrace'
+import cluster from "cluster";
+import os from "os";
 
 const exec = util.promisify(childProcess.exec)
 const flock = util.promisify(fsExt.flock)
@@ -1579,4 +1581,21 @@ app.use((err: ErrorWithStatus, req: Request, res: Response, _next: NextFunction)
 
 const port = getEnv('SERVER_APP_PORT', '3000')
 console.log('starting isuports server on :' + port + ' ...')
-app.listen(port)
+
+const totalCPUs = os.cpus().length;
+if (cluster.isMaster) {
+  console.log(`Number of CPUs is ${totalCPUs}`);
+  console.log(`Master ${process.pid} is running`);
+
+  for (let i = 0; i < totalCPUs; i++) {
+    cluster.fork();
+  }
+  cluster.on("exit", (worker, code, signal) => {
+    console.log(`worker ${worker.process.pid} died`);
+    console.log(`Now forking another worker`);
+    cluster.fork()
+  });
+} else {
+  console.log(`Worker ${process.pid} started`);
+  app.listen(parseInt(process.env["SERVER_APP_PORT"] ?? "3000", 10));
+}
