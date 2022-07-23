@@ -983,7 +983,16 @@ app.get('/api/player/competition/:competitionId/ranking', wrap(async (req, res) 
         // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
         const unlock = await flockByTenantID(tenant.id);
         try {
-            const [pss] = await adminDB.query('SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? ORDER BY row_num DESC', [tenant.id,
+            const [pss] = await adminDB.query('SELECT\n' +
+                '    player_score.score as score,\n' +
+                '    player_score.row_num as row_num,\n' +
+                '    player.id as player_id,\n' +
+                '    player.display_name as display_name\n' +
+                'FROM player_score\n' +
+                '         left join player on player_score.player_id = player.id\n' +
+                'WHERE player_score.tenant_id = ?\n' +
+                '  AND player_score.competition_id = ?\n' +
+                'ORDER BY player_score.row_num DESC', [tenant.id,
                 competition.id]);
             const scoredPlayerSet = {};
             const tmpRanks = [];
@@ -994,15 +1003,11 @@ app.get('/api/player/competition/:competitionId/ranking', wrap(async (req, res) 
                     continue;
                 }
                 scoredPlayerSet[ps.player_id] = 1;
-                const p = await retrievePlayer(ps.player_id, ['id', 'display_name']);
-                if (!p) {
-                    throw new Error('error retrievePlayer');
-                }
                 tmpRanks.push({
                     rank: 0,
                     score: ps.score,
-                    player_id: p.id,
-                    player_display_name: p.display_name,
+                    player_id: ps.player_id,
+                    player_display_name: ps.display_name,
                     row_num: ps.row_num,
                 });
             }
