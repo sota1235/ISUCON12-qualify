@@ -1060,19 +1060,18 @@ app.post(
           )
 
           for (const row of playerScoreRows) {
-            // todo: これで動くのか確認
             await adminDB.query(
-                'INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES ($id, $tenant_id, $player_id, $competition_id, $score, $row_num, $created_at, $updated_at)',
-                {
-                  $id: row.id,
-                  $tenant_id: row.tenant_id,
-                  $player_id: row.player_id,
-                  $competition_id: row.competition_id,
-                  $score: row.score,
-                  $row_num: row.row_num,
-                  $created_at: row.created_at,
-                  $updated_at: row.updated_at,
-                }
+                'INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [
+                  row.id,
+                  row.tenant_id,
+                  row.player_id,
+                  row.competition_id,
+                  row.score,
+                  row.row_num,
+                  row.created_at,
+                  row.updated_at,
+                ]
             )
           }
         } finally {
