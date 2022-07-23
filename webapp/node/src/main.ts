@@ -1,4 +1,5 @@
 require('newrelic');
+import { createClient } from '@redis/client';
 import express, { Request, Response, NextFunction, RequestHandler } from 'express'
 import cookieParser from 'cookie-parser'
 import bodyParser from 'body-parser'
@@ -90,6 +91,11 @@ async function createTenantDB(id: number): Promise<Error | undefined> {
     return new Error(`failed to exec "sqlite3 ${p} < ${tenantDBSchemaFilePath}", out=${error.stderr}`)
   }
 }
+
+// Redis client
+const redisClient = createClient({
+  url: 'redis://192.168.0.13:6379', // isu3
+});
 
 // システム全体で一意なIDを生成する
 async function dispenseID(): Promise<string> {
