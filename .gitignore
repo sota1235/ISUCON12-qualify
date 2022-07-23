@@ -1,4 +1,6 @@
 tmp/
+.npm/
+.nvm/
 .bash_history
 .bash_logout
 .lesshst
