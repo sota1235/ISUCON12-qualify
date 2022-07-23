@@ -1,0 +1,16 @@
+tmp/
+.bash_history
+.bash_logout
+.bashrc
+.lesshst
+.hushlogin
+.cache
+.profile
+.docker
+.ssh
+.gitconfig
+.sudo_as_admin_successful
+.viminfo
+.mysql_history
+# TODO 後でcommit
+initial_data/*
