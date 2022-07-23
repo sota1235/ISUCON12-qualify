@@ -5,13 +5,17 @@ GIT_BRANCH=main
 # 競技に合わせて書き換える
 HOME=/home/isucon
 SSH_NAME=isu1
-WEB_APP_DIR="webapp/node" # server上のhomeディレクトリから辿ったアプリのディレクトリ
+WEB_APP_DIR=webapp/node # server上のhomeディレクトリから辿ったアプリのディレクトリ
 SERVICE_NAME="isuports.service" # systemctlで管理されているサービス名を設定
 # MySQL
 MYSQL_SLOW_QUERY_LOG=/var/log/mysql/mariadb-slow.log
 MYSQL_USER=isucon
 MYSQL_PASS=isucon
 MYSQL_DB=isuports
+# NODE
+NPM=/home/isucon/.nvm/versions/node/v18.6.0/bin/npm
+NODE=/home/isucon/.nvm/versions/node/v18.6.0/bin/node
+EXPORT_PATH='export PATH=/home/isucon/.nvm/versions/node/v18.6.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin'
 
 .PHONY: test
 test:
@@ -74,24 +78,37 @@ setup-git: ## Gitの設定
 
 # Deploy
 .PHONY: deploy
-deploy: deploy_db_settings ## Deploy all
+deploy: ## Deploy all
 	## WebApp Deployment
-	ssh $(SSH_NAME) "cd $(HOME) && git pull"
+	# cd webapp/node && npm i && cd ../..
+	# npm run --prefix webapp/node build
+	rsync -av ./webapp/node/build $(SSH_NAME):$(HOME)/webapp/node
+	ssh $(SSH_NAME) "cd $(HOME) && git pull && git merge origin/main"
 	ssh $(SSH_NAME) "cd $(HOME) && git checkout $(GIT_BRANCH)"
-	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && npm i && npm run build"
-	ssh $(SSH_NAME) "sudo systemctl restart $(SERVICE_NAME)"
-	ssh $(SSH_NAME) "sudo systemctl restart nginx"
+	ssh $(SSH_NAME) "cd $(HOME) && make deploy_remote"
+	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && $(NPM) i"
+	# ssh $(SSH_NAME) "cd $(HOME)/$(WEB_APP_DIR) && $(NPM) run build"
+	# ssh $(SSH_NAME) "sudo systemctl daemon-reload"
+	# ssh $(SSH_NAME) "sudo systemctl restart $(SERVICE_NAME)"
+	# ssh $(SSH_NAME) "sudo systemctl restart nginx"
+	# MySQL
+	ssh $(SSH_NAME) "sudo cp $(HOME)/etc/mysql/conf.d/mysqld.cnf /etc/mysql/conf.d"
 
-.PHONY: deploy_db_settings
-deploy_db_settings: ## Deploy /etc configs
-	ssh $(SSH_NAME) "sudo systemctl restart mysql"
-	# ssh $(SSH_NAME) "sudo systemctl restart mariadb"
-	# ssh $(SSH_NAME) "sudo systemctl restart postgresql-*"
+.PHONY: deploy_remote
+deploy_remote: ## remoteで実行する
+	# $(EXPORT_PATH) && cd $(HOME)/$(WEB_APP_DIR) && npm i
+	# $(EXPORT_PATH) && cd $(HOME)/$(WEB_APP_DIR) && npm run build
+	sudo systemctl daemon-reload
+	sudo systemctl restart $(SERVICE_NAME)
+	sudo systemctl restart nginx
+	# MySQL
+	sudo cp $(HOME)/etc/mysql/conf.d/mysqld.cnf /etc/mysql/conf.d
+	sudo systemctl restart mysql
 
 # Util
 .PHONY: maintenance
 maintenance: ## メンテナンスコマンド
-	ssh $(SSH_NAME) "sudo /opt/isucon-env-checker/isucon-env-checker" # メンテナンスコマンド
+	ssh $(SSH_NAME) "sudo /usr/local/bin/isucon-env-checker" # メンテナンスコマンド
 
 .PHONY: health_check
 health_check: maintenance ## 各サービスの状態をチェック
