@@ -20,6 +20,8 @@ const fs_1 = require("fs");
 const fs_ext_1 = __importDefault(require("fs-ext"));
 const sync_1 = require("csv-parse/sync");
 const sqltrace_1 = require("./sqltrace");
+const cluster_1 = __importDefault(require("cluster"));
+const os_1 = __importDefault(require("os"));
 const exec = util_1.default.promisify(child_process_1.default.exec);
 const flock = util_1.default.promisify(fs_ext_1.default.flock);
 // constants
@@ -1188,4 +1190,20 @@ app.use((err, req, res, _next) => {
 });
 const port = getEnv('SERVER_APP_PORT', '3000');
 console.log('starting isuports server on :' + port + ' ...');
-app.listen(port);
+const totalCPUs = os_1.default.cpus().length;
+if (cluster_1.default.isMaster) {
+    console.log(`Number of CPUs is ${totalCPUs}`);
+    console.log(`Master ${process.pid} is running`);
+    for (let i = 0; i < totalCPUs; i++) {
+        cluster_1.default.fork();
+    }
+    cluster_1.default.on("exit", (worker, code, signal) => {
+        console.log(`worker ${worker.process.pid} died`);
+        console.log(`Now forking another worker`);
+        cluster_1.default.fork();
+    });
+}
+else {
+    console.log(`Worker ${process.pid} started`);
+    app.listen(parseInt(process.env["SERVER_APP_PORT"] ?? "3000", 10));
+}
