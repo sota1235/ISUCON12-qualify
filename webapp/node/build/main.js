@@ -89,12 +89,12 @@ const redisClient = new ioredis_1.default({
     host: '192.168.0.13', // isu3
 });
 async function getFromCache(key, func) {
-    console.log(`redis key: ${key}`);
+    // console.log(`redis key: ${key}`)
     if (await redisClient.exists(key)) {
         // @ts-ignore
         return JSON.parse(await redisClient.get(key));
     }
-    console.log(`redis key not exists: ${key}`);
+    // console.log(`redis key not exists: ${key}`)
     const result = await func();
     await redisClient.set(key, JSON.stringify(result));
     return result;
