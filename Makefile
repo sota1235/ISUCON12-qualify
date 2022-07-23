@@ -90,6 +90,7 @@ deploy: deploy_db_settings ## Deploy all
 
 .PHONY: deploy_remote
 deploy_remote: ## remoteで実行する
+	export PATH=$PATH:/home/isucon/.nvm/versions/node/v18.6.0/bin
 	cd $(HOME)/$(WEB_APP_DIR)
 	npm i
 	npm run build
