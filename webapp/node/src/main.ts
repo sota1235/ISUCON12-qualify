@@ -82,6 +82,7 @@ async function connectToTenantDB(id: number): Promise<Database> {
 
 // テナントDBを新規に作成する
 async function createTenantDB(id: number): Promise<Error | undefined> {
+  // todo: MySQL に変える
   const p = tenantDBPath(id)
 
   try {
