@@ -441,7 +441,10 @@ async function authorizePlayer(tenantDB: Database, id: string): Promise<Error | 
 // 大会を取得する
 async function retrieveCompetition(tenantDB: Database, id: string): Promise<CompetitionRow | undefined> {
   try {
-    const competitionRow = await tenantDB.get<CompetitionRow>('SELECT * FROM competition WHERE id = ?', id)
+    const competitionRow = await getFromCache<CompetitionRow | undefined>(
+      `competition:${id}`,
+      () => tenantDB.get<CompetitionRow>('SELECT * FROM competition WHERE id = ?', id),
+    );
     return competitionRow
   } catch (error) {
     throw new Error(`error Select competition: id=${id}, ${error}`)
@@ -864,6 +867,7 @@ app.post(
       try {
         try {
           await tenantDB.run('UPDATE player SET is_disqualified = ?, updated_at = ? WHERE id = ?', true, now, playerId)
+          await clearCache(`player:${playerId}`)
         } catch (error) {
           throw new Error(`error Update player: isDisqualified=true, updatedAt=${now}, id=${playerId}, ${error}`)
         }
@@ -991,6 +995,7 @@ app.post(
           now,
           competitionId
         )
+        await clearCache(`competition:${competitionId}`)
       } finally {
         tenantDB.close()
       }
@@ -1290,7 +1295,7 @@ app.get(
 
         const competitions =
           await getFromCache<CompetitionRow[]>(
-            `competition:${viewer.tenantId}`,
+            `competitions:${viewer.tenantId}`,
             () => tenantDB.all<CompetitionRow[]>('SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC', viewer.tenantId)
           );
 
@@ -1302,13 +1307,17 @@ app.get(
           const unlock = await flockByTenantID(viewer.tenantId)
           try {
             for (const comp of competitions) {
-              const ps = await tenantDB.get<PlayerScoreRow>(
-                // 最後にCSVに登場したスコアを採用する = row_numが一番大きいもの
-                'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1',
-                viewer.tenantId,
-                comp.id,
-                p.id
-              )
+              const ps =
+                await getFromCache<PlayerScoreRow | undefined>(
+                  `oldest_score:${viewer.tenantId}:${comp.id}:${p.id}`,
+                  () => tenantDB.get<PlayerScoreRow>(
+                    // 最後にCSVに登場したスコアを採用する = row_numが一番大きいもの
+                    'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1',
+                    viewer.tenantId,
+                    comp.id,
+                    p.id
+                  )
+                );
               if (!ps) {
                 // 行がない = スコアが記録されてない
                 continue
@@ -1370,7 +1379,7 @@ app.get(
       }
 
       let cd: CompetitionDetail
-      const ranks: CompetitionRank[] = []
+      let ranks: CompetitionRank[] = []
       const tenantDB = await connectToTenantDB(viewer.tenantId)
       try {
         const error = await authorizePlayer(tenantDB, viewer.playerId)
@@ -1414,58 +1423,66 @@ app.get(
           rankAfter = parseInt(rankAfterStr.toString(), 10)
         }
 
-        // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
-        const unlock = await flockByTenantID(tenant.id)
-        try {
-          const pss = await tenantDB.all<PlayerScoreRow[]>(
-            'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? ORDER BY row_num DESC',
-            tenant.id,
-            competition.id
-          )
+        ranks = await getFromCache<CompetitionRank[]>(
+          `ranks:${tenant.id}:${competitionId}`,
+          async () => {
+            // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
+            const ranks: CompetitionRank[] = [];
+            const unlock = await flockByTenantID(tenant.id)
+            try {
+              const pss = await tenantDB.all<PlayerScoreRow[]>(
+                'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? ORDER BY row_num DESC',
+                tenant.id,
+                competition.id
+              )
 
-          const scoredPlayerSet: { [player_id: string]: number } = {}
-          const tmpRanks: (CompetitionRank & WithRowNum)[] = []
-          for (const ps of pss) {
-            // player_scoreが同一player_id内ではrow_numの降順でソートされているので
-            // 現れたのが2回目以降のplayer_idはより大きいrow_numでスコアが出ているとみなせる
-            if (scoredPlayerSet[ps.player_id]) {
-              continue
-            }
-            scoredPlayerSet[ps.player_id] = 1
-            const p = await retrievePlayer(tenantDB, ps.player_id, ['id', 'display_name'])
-            if (!p) {
-              throw new Error('error retrievePlayer')
+              const scoredPlayerSet: { [player_id: string]: number } = {}
+              const tmpRanks: (CompetitionRank & WithRowNum)[] = []
+              for (const ps of pss) {
+                // player_scoreが同一player_id内ではrow_numの降順でソートされているので
+                // 現れたのが2回目以降のplayer_idはより大きいrow_numでスコアが出ているとみなせる
+                if (scoredPlayerSet[ps.player_id]) {
+                  continue
+                }
+                scoredPlayerSet[ps.player_id] = 1
+                const p = await retrievePlayer(tenantDB, ps.player_id, ['id', 'display_name'])
+                if (!p) {
+                  throw new Error('error retrievePlayer')
+                }
+
+                tmpRanks.push({
+                  rank: 0,
+                  score: ps.score,
+                  player_id: p.id,
+                  player_display_name: p.display_name,
+                  row_num: ps.row_num,
+                })
+              }
+
+              tmpRanks.sort((a, b) => {
+                if (a.score === b.score) {
+                  return a.row_num < b.row_num ? -1 : 1
+                }
+                return a.score > b.score ? -1 : 1
+              })
+
+              tmpRanks.forEach((rank, index) => {
+                if (index < rankAfter) return
+                if (ranks.length >= 100) return
+                ranks.push({
+                  rank: index + 1,
+                  score: rank.score,
+                  player_id: rank.player_id,
+                  player_display_name: rank.player_display_name,
+                })
+              })
+            } finally {
+              unlock()
             }
 
-            tmpRanks.push({
-              rank: 0,
-              score: ps.score,
-              player_id: p.id,
-              player_display_name: p.display_name,
-              row_num: ps.row_num,
-            })
+            return ranks;
           }
-
-          tmpRanks.sort((a, b) => {
-            if (a.score === b.score) {
-              return a.row_num < b.row_num ? -1 : 1
-            }
-            return a.score > b.score ? -1 : 1
-          })
-
-          tmpRanks.forEach((rank, index) => {
-            if (index < rankAfter) return
-            if (ranks.length >= 100) return
-            ranks.push({
-              rank: index + 1,
-              score: rank.score,
-              player_id: rank.player_id,
-              player_display_name: rank.player_display_name,
-            })
-          })
-        } finally {
-          unlock()
-        }
+        )
       } finally {
         tenantDB.close()
       }

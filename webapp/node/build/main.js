@@ -259,7 +259,7 @@ async function authorizePlayer(tenantDB, id) {
 // 大会を取得する
 async function retrieveCompetition(tenantDB, id) {
     try {
-        const competitionRow = await tenantDB.get('SELECT * FROM competition WHERE id = ?', id);
+        const competitionRow = await getFromCache(`competition:${id}`, () => tenantDB.get('SELECT * FROM competition WHERE id = ?', id));
         return competitionRow;
     }
     catch (error) {
@@ -607,6 +607,7 @@ app.post('/api/organizer/player/:playerId/disqualified', wrap(async (req, res) =
         try {
             try {
                 await tenantDB.run('UPDATE player SET is_disqualified = ?, updated_at = ? WHERE id = ?', true, now, playerId);
+                await clearCache(`player:${playerId}`);
             }
             catch (error) {
                 throw new Error(`error Update player: isDisqualified=true, updatedAt=${now}, id=${playerId}, ${error}`);
@@ -709,6 +710,7 @@ app.post('/api/organizer/competition/:competitionId/finish', wrap(async (req, re
                 throw new ErrorWithStatus(404, 'competition not found');
             }
             await tenantDB.run('UPDATE competition SET finished_at = ?, updated_at = ? WHERE id = ?', now, now, competitionId);
+            await clearCache(`competition:${competitionId}`);
         }
         finally {
             tenantDB.close();
@@ -953,7 +955,7 @@ app.get('/api/player/player/:playerId', wrap(async (req, res) => {
                 display_name: p.display_name,
                 is_disqualified: !!p.is_disqualified,
             };
-            const competitions = await getFromCache(`competition:${viewer.tenantId}`, () => tenantDB.all('SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC', viewer.tenantId));
+            const competitions = await getFromCache(`competitions:${viewer.tenantId}`, () => tenantDB.all('SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC', viewer.tenantId));
             const pss = [];
             // competitionsが0件だったらロック取らなくていい
             if (competitions.length > 0) {
@@ -961,9 +963,9 @@ app.get('/api/player/player/:playerId', wrap(async (req, res) => {
                 const unlock = await flockByTenantID(viewer.tenantId);
                 try {
                     for (const comp of competitions) {
-                        const ps = await tenantDB.get(
+                        const ps = await getFromCache(`oldest_score:${viewer.tenantId}:${comp.id}:${p.id}`, () => tenantDB.get(
                         // 最後にCSVに登場したスコアを採用する = row_numが一番大きいもの
-                        'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1', viewer.tenantId, comp.id, p.id);
+                        'SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1', viewer.tenantId, comp.id, p.id));
                         if (!ps) {
                             // 行がない = スコアが記録されてない
                             continue;
@@ -1019,7 +1021,7 @@ app.get('/api/player/competition/:competitionId/ranking', wrap(async (req, res) 
             throw new ErrorWithStatus(400, 'competition_id is required');
         }
         let cd;
-        const ranks = [];
+        let ranks = [];
         const tenantDB = await connectToTenantDB(viewer.tenantId);
         try {
             const error = await authorizePlayer(tenantDB, viewer.playerId);
@@ -1056,53 +1058,57 @@ app.get('/api/player/competition/:competitionId/ranking', wrap(async (req, res) 
             if (rankAfterStr) {
                 rankAfter = parseInt(rankAfterStr.toString(), 10);
             }
-            // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
-            const unlock = await flockByTenantID(tenant.id);
-            try {
-                const pss = await tenantDB.all('SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? ORDER BY row_num DESC', tenant.id, competition.id);
-                const scoredPlayerSet = {};
-                const tmpRanks = [];
-                for (const ps of pss) {
-                    // player_scoreが同一player_id内ではrow_numの降順でソートされているので
-                    // 現れたのが2回目以降のplayer_idはより大きいrow_numでスコアが出ているとみなせる
-                    if (scoredPlayerSet[ps.player_id]) {
-                        continue;
+            ranks = await getFromCache(`ranks:${tenant.id}:${competitionId}`, async () => {
+                // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
+                const ranks = [];
+                const unlock = await flockByTenantID(tenant.id);
+                try {
+                    const pss = await tenantDB.all('SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? ORDER BY row_num DESC', tenant.id, competition.id);
+                    const scoredPlayerSet = {};
+                    const tmpRanks = [];
+                    for (const ps of pss) {
+                        // player_scoreが同一player_id内ではrow_numの降順でソートされているので
+                        // 現れたのが2回目以降のplayer_idはより大きいrow_numでスコアが出ているとみなせる
+                        if (scoredPlayerSet[ps.player_id]) {
+                            continue;
+                        }
+                        scoredPlayerSet[ps.player_id] = 1;
+                        const p = await retrievePlayer(tenantDB, ps.player_id, ['id', 'display_name']);
+                        if (!p) {
+                            throw new Error('error retrievePlayer');
+                        }
+                        tmpRanks.push({
+                            rank: 0,
+                            score: ps.score,
+                            player_id: p.id,
+                            player_display_name: p.display_name,
+                            row_num: ps.row_num,
+                        });
                     }
-                    scoredPlayerSet[ps.player_id] = 1;
-                    const p = await retrievePlayer(tenantDB, ps.player_id, ['id', 'display_name']);
-                    if (!p) {
-                        throw new Error('error retrievePlayer');
-                    }
-                    tmpRanks.push({
-                        rank: 0,
-                        score: ps.score,
-                        player_id: p.id,
-                        player_display_name: p.display_name,
-                        row_num: ps.row_num,
+                    tmpRanks.sort((a, b) => {
+                        if (a.score === b.score) {
+                            return a.row_num < b.row_num ? -1 : 1;
+                        }
+                        return a.score > b.score ? -1 : 1;
+                    });
+                    tmpRanks.forEach((rank, index) => {
+                        if (index < rankAfter)
+                            return;
+                        if (ranks.length >= 100)
+                            return;
+                        ranks.push({
+                            rank: index + 1,
+                            score: rank.score,
+                            player_id: rank.player_id,
+                            player_display_name: rank.player_display_name,
+                        });
                     });
                 }
-                tmpRanks.sort((a, b) => {
-                    if (a.score === b.score) {
-                        return a.row_num < b.row_num ? -1 : 1;
-                    }
-                    return a.score > b.score ? -1 : 1;
-                });
-                tmpRanks.forEach((rank, index) => {
-                    if (index < rankAfter)
-                        return;
-                    if (ranks.length >= 100)
-                        return;
-                    ranks.push({
-                        rank: index + 1,
-                        score: rank.score,
-                        player_id: rank.player_id,
-                        player_display_name: rank.player_display_name,
-                    });
-                });
-            }
-            finally {
-                unlock();
-            }
+                finally {
+                    unlock();
+                }
+                return ranks;
+            });
         }
         finally {
             tenantDB.close();
